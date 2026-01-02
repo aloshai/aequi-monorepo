@@ -6,14 +6,21 @@ import { z } from 'zod'
 import { isAddress } from 'viem'
 import type { Address } from 'viem'
 import { getChainConfig, SUPPORTED_CHAINS } from './config/chains'
-import { SWAP_QUOTE_TTL_SECONDS } from './config/constants'
+import {
+    AEQUI_EXECUTOR_ADDRESS,
+    EXECUTOR_INTERHOP_BUFFER_BPS,
+    SWAP_QUOTE_TTL_SECONDS,
+    INTERMEDIATE_TOKENS,
+    INTERMEDIATE_TOKEN_ADDRESSES,
+    MIN_V2_RESERVE_THRESHOLD,
+    MIN_V3_LIQUIDITY_THRESHOLD,
+} from './config/constants'
 import { appConfig } from './config/app-config'
 import { ExchangeService } from './services/exchange/exchange-service'
-import { TokenService } from './services/tokens/token-service'
-import { PriceService } from './services/price/price-service'
+import { TokenService, PriceService, PoolDiscovery } from '@aequi/pricing'
 import { QuoteService } from './services/quote/quote-service'
 import { AllowanceService } from './services/tokens/allowance-service'
-import { SwapBuilder } from './services/transactions/swap-builder'
+import { SwapBuilder } from '@aequi/core'
 import { formatAmountFromUnits, parseAmountToUnits } from './utils/units'
 import { DefaultChainClientProvider } from './services/clients/default-chain-client-provider'
 import { normalizeAddress } from './utils/trading'
@@ -21,11 +28,19 @@ import type { ChainConfig, PriceQuote, QuoteResult, RoutePreference, TokenMetada
 
 const chainClientProvider = new DefaultChainClientProvider()
 const exchangeService = new ExchangeService()
-const tokenService = new TokenService(chainClientProvider)
-const priceService = new PriceService(tokenService, chainClientProvider)
+const tokenService = new TokenService(chainClientProvider, { preloadTokens: INTERMEDIATE_TOKENS })
+const poolDiscovery = new PoolDiscovery(tokenService, chainClientProvider, {
+    intermediateTokenAddresses: INTERMEDIATE_TOKEN_ADDRESSES,
+    minV2ReserveThreshold: MIN_V2_RESERVE_THRESHOLD,
+    minV3LiquidityThreshold: MIN_V3_LIQUIDITY_THRESHOLD,
+})
+const priceService = new PriceService(tokenService, chainClientProvider, poolDiscovery)
 const quoteService = new QuoteService(tokenService, priceService)
 const allowanceService = new AllowanceService(tokenService, chainClientProvider)
-const swapBuilder = new SwapBuilder()
+const swapBuilder = new SwapBuilder({
+    executorByChain: AEQUI_EXECUTOR_ADDRESS,
+    interhopBufferBps: EXECUTOR_INTERHOP_BUFFER_BPS,
+})
 
 const chainQuerySchema = z.object({
     chain: z.string().min(1),

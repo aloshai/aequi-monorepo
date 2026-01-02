@@ -1,0 +1,14 @@
+{
+  "name": "@aequi/core",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "module": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "viem": "^2.38.6"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

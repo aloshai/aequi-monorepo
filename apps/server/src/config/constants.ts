@@ -1,5 +1,5 @@
 import { getAddress, type Address } from 'viem'
-import type { ChainKey, TokenMetadata } from '../types'
+import type { ChainKey, TokenMetadata } from '@aequi/core'
 import { appConfig } from './app-config'
 
 export const Q18 = 10n ** 18n

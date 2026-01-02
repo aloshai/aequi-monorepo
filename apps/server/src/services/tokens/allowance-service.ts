@@ -1,8 +1,8 @@
 import { encodeFunctionData, erc20Abi, maxUint256 } from 'viem'
 import type { Address, Hex } from 'viem'
-import type { ChainConfig } from '../../types'
+import type { ChainConfig } from '@aequi/core'
 import { parseAmountToUnits } from '../../utils/units'
-import { TokenService } from './token-service'
+import { TokenService } from '@aequi/pricing'
 import type { IChainClientProvider } from '../clients/types'
 import { DefaultChainClientProvider } from '../clients/default-chain-client-provider'
 

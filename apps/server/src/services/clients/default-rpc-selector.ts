@@ -1,4 +1,4 @@
-import type { ChainConfig } from '../../types'
+import type { ChainConfig } from '@aequi/core'
 import { resolveRpcUrls } from '../rpc/rpc-registry'
 import type { IRpcSelector } from './types'
 

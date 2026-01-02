@@ -1,6 +1,6 @@
 import { createPublicClient, custom, fallback, http } from 'viem'
 import type { EIP1193RequestFn, PublicClient } from 'viem'
-import type { ChainConfig, ChainKey } from '../types'
+import type { ChainConfig, ChainKey } from '@aequi/core'
 import { resolveRpcUrls } from '../services/rpc/rpc-registry'
 
 const clientCache = new Map<ChainKey, Promise<PublicClient>>()

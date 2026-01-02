@@ -1,9 +1,9 @@
 import type { Address } from 'viem'
-import type { ChainConfig, QuoteResult, RoutePreference } from '../../types'
+import type { ChainConfig, QuoteResult, RoutePreference } from '@aequi/core'
 import { parseAmountToUnits } from '../../utils/units'
 import { clampSlippage } from '../../utils/trading'
-import { PriceService } from '../price/price-service'
-import { TokenService } from '../tokens/token-service'
+import { PriceService } from '@aequi/pricing'
+import { TokenService } from '@aequi/pricing'
 
 export class QuoteService {
   constructor(
@@ -33,7 +33,7 @@ export class QuoteService {
       throw new Error('Amount must be greater than zero')
     }
 
-  const quote = await this.priceService.getBestQuoteForTokens(chain, tokenIn, tokenOut, amountIn, preference)
+    const quote = await this.priceService.getBestQuoteForTokens(chain, tokenIn, tokenOut, amountIn, preference)
     if (!quote) {
       return null
     }

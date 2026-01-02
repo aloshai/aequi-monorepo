@@ -12,6 +12,8 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@aequi/core": "*",
+    "@aequi/pricing": "*",
     "@fastify/cors": "^11.1.0",
     "@fastify/rate-limit": "^10.3.0",
     "@pancakeswap/swap-sdk-core": "^1.5.1",
