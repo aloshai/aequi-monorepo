@@ -46,6 +46,13 @@ export interface PriceSource {
   approximate?: boolean
   amountIn: bigint
   amountOut: bigint
+  reserves?: {
+    reserve0?: bigint
+    reserve1?: bigint
+    liquidity?: bigint
+    token0?: Address
+    token1?: Address
+  }
 }
 
 export interface PriceQuote {

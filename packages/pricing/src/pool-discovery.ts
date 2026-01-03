@@ -24,6 +24,10 @@ interface V2ReserveSnapshot {
   pairAddress: Address
   reserveIn: bigint
   reserveOut: bigint
+  reserve0: bigint
+  reserve1: bigint
+  token0: Address
+  token1: Address
 }
 
 interface V3PoolSnapshot {
@@ -148,10 +152,20 @@ export class PoolDiscovery {
               ? (reserve1 as bigint)
               : (reserve0 as bigint)
 
+            const token1Address = normalizeAddress(token0Address === tokenIn.address ? tokenOut.address : tokenIn.address) // Infer token1 if not fetched, but we fetched token0.
+            // Wait, for V2 we only fetched token0.
+            // If token0 == tokenIn, then token1 == tokenOut.
+            // If token0 != tokenIn, then token0 == tokenOut and token1 == tokenIn.
+            // Actually we know the pair is tokenIn/tokenOut.
+
             const snapshot: V2ReserveSnapshot = {
               pairAddress: item.poolAddress,
               reserveIn,
               reserveOut,
+              reserve0: reserve0 as bigint,
+              reserve1: reserve1 as bigint,
+              token0: token0Address,
+              token1: sameAddress(token0Address, tokenIn.address) ? tokenOut.address : tokenIn.address,
             }
 
             const quote = await this.computeV2Quote(
@@ -296,6 +310,11 @@ export class PoolDiscovery {
                       feeTier: candidate.snapshot.fee,
                       amountIn,
                       amountOut,
+                      reserves: {
+                        liquidity: candidate.snapshot.liquidity,
+                        token0: candidate.snapshot.token0,
+                        token1: candidate.snapshot.token1,
+                      },
                     },
                   ],
                   liquidityScore: candidate.snapshot.liquidity,
@@ -511,6 +530,12 @@ export class PoolDiscovery {
           poolAddress: snapshot.pairAddress,
           amountIn,
           amountOut: amountOutRaw,
+          reserves: {
+            reserve0: snapshot.reserve0,
+            reserve1: snapshot.reserve1,
+            token0: snapshot.token0,
+            token1: snapshot.token1,
+          },
         },
       ],
       liquidityScore,
@@ -607,6 +632,11 @@ export class PoolDiscovery {
           feeTier: snapshot.fee,
           amountIn,
           amountOut: amountOutRaw,
+          reserves: {
+            liquidity: snapshot.liquidity,
+            token0: snapshot.token0,
+            token1: snapshot.token1,
+          },
         },
       ],
       liquidityScore: snapshot.liquidity,

@@ -27,8 +27,7 @@ import { CHAIN_BY_KEY, wagmiConfig } from './lib/wagmi'
 import { TokenModal } from './components/TokenModal'
 import { tokenManager } from './services/token-manager'
 import type { Token } from './services/token-manager'
-import { SwapDetails } from './components/SwapDetails'
-import { OfferList } from './components/OfferList'
+import { QuoteAnalysis } from './components/QuoteAnalysis'
 import { SettingsModal } from './components/SettingsModal'
 import { getTokenLogo } from './utils/logos'
 
@@ -209,7 +208,33 @@ function App() {
 
   // Reset state on chain change
   useEffect(() => {
-    setQuoteForm(prev => ({ ...prev, tokenA: null, tokenB: null }))
+    const presets = tokenDirectory[selectedChain] || []
+    const chainId = CHAIN_ID_BY_KEY[selectedChain]
+    
+    // Default pairs: BNB->USDT for BSC, ETH->USDC for Ethereum
+    const symbolA = selectedChain === 'bsc' ? 'BNB' : 'ETH'
+    const symbolB = selectedChain === 'bsc' ? 'USDT' : 'USDC'
+
+    const presetA = presets.find(p => p.symbol === symbolA)
+    const presetB = presets.find(p => p.symbol === symbolB)
+
+    const tokenA = presetA ? {
+      address: presetA.address,
+      symbol: presetA.symbol,
+      name: presetA.label,
+      decimals: 18,
+      chainId
+    } : null
+
+    const tokenB = presetB ? {
+      address: presetB.address,
+      symbol: presetB.symbol,
+      name: presetB.label,
+      decimals: 18,
+      chainId
+    } : null
+
+    setQuoteForm(prev => ({ ...prev, tokenA, tokenB, amount: '1' }))
     setQuoteResult(null)
     setPreparedSwap(null)
     setAllowanceState(null)
@@ -613,12 +638,18 @@ function App() {
       </nav>
 
       <div className="app-shell">
-        <main className="main-content">
           {activeTab === 'swap' && (
             <section className="swap-panel">
+              {/* LEFT PANEL - Token Selection & Input */}
               <div className="swap-card">
-                <div className="swap-header">
-                  <span>Swap</span>
+                <div className="panel-header">
+                  <span className="panel-title">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <polyline points="12 6 12 12 16 14"></polyline>
+                    </svg>
+                    Trade Terminal
+                  </span>
                   <button className="settings-btn" title="Settings" onClick={() => setSettingsModalOpen(true)}>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <circle cx="12" cy="12" r="3"></circle>
@@ -702,15 +733,6 @@ function App() {
                   </div>
                 </div>
 
-                {quoteResult && quoteForm.tokenA && quoteForm.tokenB && (
-                  <SwapDetails
-                    quote={quoteResult}
-                    tokenA={quoteForm.tokenA}
-                    tokenB={quoteForm.tokenB}
-                    amountIn={quoteForm.amount}
-                  />
-                )}
-
                 {walletError && (
                   <div className="error-message">
                     {walletError}
@@ -750,19 +772,52 @@ function App() {
                     prepareLoading ? 'Preparing Swap...' :
                       approvalLoading ? 'Approving...' :
                         swapExecutionLoading ? 'Swapping...' :
-                          'Swap'}
+                          'Execute Swap'}
                 </button>
+              </div>
 
-                {quoteResult?.offers && quoteResult.offers.length > 0 && quoteForm.tokenB && (
-                  <OfferList
-                    offers={quoteResult.offers}
-                    tokenB={quoteForm.tokenB}
-                  />
+              {/* RIGHT PANEL - Quote Display & Details */}
+              <div className="terminal-panel">
+                <div className="panel-header">
+                  <span className="panel-title">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="12" y1="1" x2="12" y2="23"></line>
+                      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                    </svg>
+                    Quote Analysis
+                  </span>
+                  {quoteResult && (
+                    <span className="route-badge">{quoteResult.routePreference}</span>
+                  )}
+                </div>
+
+                {quoteLoading ? (
+                  <div className="quote-loading">
+                    <div className="spinner"></div>
+                    <span>Fetching best rates...</span>
+                  </div>
+                ) : !quoteResult ? (
+                  <div className="quote-empty">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="12" y1="1" x2="12" y2="23"></line>
+                      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                    </svg>
+                    <span>Enter amount to see quote</span>
+                  </div>
+                ) : (
+                  <div className="quote-display">
+                    {quoteResult && quoteForm.tokenA && quoteForm.tokenB && (
+                      <QuoteAnalysis
+                        quote={quoteResult}
+                        tokenA={quoteForm.tokenA}
+                        tokenB={quoteForm.tokenB}
+                      />
+                    )}
+                  </div>
                 )}
               </div>
             </section>
           )}
-        </main>
       </div>
 
       <TokenModal

@@ -41,6 +41,21 @@ export interface RouteToken {
   decimals: number
 }
 
+export interface RouteSource {
+  dexId: string
+  poolAddress?: string
+  feeTier?: number
+  amountIn: string
+  amountOut: string
+  reserves?: {
+    reserve0?: string
+    reserve1?: string
+    liquidity?: string
+    token0?: string
+    token1?: string
+  }
+}
+
 export interface PriceResponse {
   chain: ChainKey
   source: string
@@ -62,7 +77,7 @@ export interface PriceResponse {
   hopVersions: ('v2' | 'v3')[]
   routePreference: 'auto' | 'v2' | 'v3'
   pools: RoutePool[]
-  sources: Array<{ dexId: string; amountOut: string }>
+  sources: RouteSource[]
 }
 
 export interface QuoteResponse extends PriceResponse {

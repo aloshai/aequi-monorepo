@@ -96,7 +96,17 @@ const formatPriceQuote = (chain: ChainConfig, quote: PriceQuote, routePreference
 
     const sources = quote.sources.map((source) => ({
         dexId: source.dexId,
+        poolAddress: source.poolAddress,
+        feeTier: source.feeTier,
+        amountIn: source.amountIn.toString(),
         amountOut: source.amountOut.toString(),
+        reserves: source.reserves ? {
+            reserve0: source.reserves.reserve0?.toString(),
+            reserve1: source.reserves.reserve1?.toString(),
+            liquidity: source.reserves.liquidity?.toString(),
+            token0: source.reserves.token0,
+            token1: source.reserves.token1,
+        } : undefined
     }))
 
     const amountInFormatted = formatAmountFromUnits(quote.amountIn, tokenIn.decimals)
