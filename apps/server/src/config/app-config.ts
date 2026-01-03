@@ -42,7 +42,7 @@ const DEFAULTS = {
   executor: {
     interhopBufferBps: 3,
     quoteTtlSeconds: 15,
-    bscAddress: '0xb35176A22AC97c88155417DCe4Bd5d9c2E095A60' as Address,
+    bscAddress: '0xf3f12caa555e54271a502fE112eBD87fD171d931' as Address,
   },
   dex: {
     uniswapV2Factory: '0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6' as Address,
@@ -66,8 +66,8 @@ export const appConfig = {
   rpc: {
     ethereum: parseUrlList(process.env.RPC_URL_ETH),
     ethereumFallback: parseUrlList(process.env.RPC_URL_ETH_FALLBACK),
-    bsc: parseUrlList(process.env.RPC_URL_BSC),
-    bscFallback: parseUrlList(process.env.RPC_URL_BSC_FALLBACK),
+    bsc: parseUrlList(process.env.BSC_RPC_URL),
+    bscFallback: parseUrlList(process.env.BSC_RPC_URL_FALLBACK),
   },
   dex: {
     uniswapV2Factory: parseAddressWithFallback(process.env.UNISWAP_V2_FACTORY, DEFAULTS.dex.uniswapV2Factory),

@@ -13,6 +13,7 @@ export const CHAIN_CONFIGS: Record<ChainKey, ChainConfig> = {
         wrappedNativeAddress: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
         rpcUrls: appConfig.rpc.ethereum.length ? appConfig.rpc.ethereum : Array.from(mainnet.rpcUrls.default.http),
         fallbackRpcUrls: appConfig.rpc.ethereumFallback,
+        disablePublicRpcRegistry: appConfig.rpc.ethereum.length > 0,
         viemChain: mainnet,
         dexes: [
             {
@@ -48,6 +49,7 @@ export const CHAIN_CONFIGS: Record<ChainKey, ChainConfig> = {
             return defaults.length ? Array.from(defaults) : ['https://bsc.drpc.org']
         })(),
         fallbackRpcUrls: appConfig.rpc.bscFallback,
+        disablePublicRpcRegistry: appConfig.rpc.bsc.length > 0,
         viemChain: bscChain,
         dexes: [
             {

@@ -298,12 +298,29 @@ export class SwapBuilder {
         ? this.encodeV2SingleHopCall(tokenIn.address, tokenOut.address, hopAmountIn, hopMinOut, hopRecipient, deadline)
         : this.encodeV3SingleHopCall(tokenIn.address, tokenOut.address, source.feeTier, hopAmountIn, hopMinOut, hopRecipient, deadline)
 
+      // Dynamic Injection for multi-hop
+      // For the first hop (index 0), we use the fixed amountIn.
+      // For subsequent hops, we must inject the output of the previous hop (which is the current tokenIn balance).
+      const isInjectionNeeded = index > 0
+      const injectToken = isInjectionNeeded ? tokenIn.address : '0x0000000000000000000000000000000000000000' as Address
+      
+      let injectOffset = 0n
+      if (isInjectionNeeded) {
+        if (hopVersion === 'v2') {
+          // swapExactTokensForTokens(amountIn, ...) -> amountIn is at offset 4
+          injectOffset = 4n
+        } else {
+          // exactInputSingle(params) -> params.amountIn is at offset 4 + (5 * 32) = 164
+          injectOffset = 164n
+        }
+      }
+
       const plannedCall = {
         target: dex.routerAddress,
         value: 0n,
         data: swapCallData,
-        injectToken: '0x0000000000000000000000000000000000000000' as Address,
-        injectOffset: 0n,
+        injectToken,
+        injectOffset,
       }
 
       executorCalls.push(plannedCall)

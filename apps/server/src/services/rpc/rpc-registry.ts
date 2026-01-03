@@ -313,10 +313,15 @@ const ensureChainlistCache = async () => {
 }
 
 export const resolveRpcUrls = async (chainConfig: ChainConfig): Promise<string[]> => {
+  const configured = dedupe([...chainConfig.rpcUrls, ...(chainConfig.fallbackRpcUrls ?? [])])
+
+  if (chainConfig.disablePublicRpcRegistry) {
+    return configured
+  }
+
   await ensureChainlistCache()
 
   const chainlist = cache.data.get(chainConfig.id) ?? []
-  const configured = dedupe([...chainConfig.rpcUrls, ...(chainConfig.fallbackRpcUrls ?? [])])
   const merged = dedupe([...configured, ...chainlist])
 
   if (!merged.length) {

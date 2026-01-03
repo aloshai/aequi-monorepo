@@ -24,6 +24,7 @@ export interface ChainConfig {
   wrappedNativeAddress: Address
   rpcUrls: string[]
   fallbackRpcUrls?: string[]
+  disablePublicRpcRegistry?: boolean
   viemChain: Chain
   dexes: DexConfig[]
 }
