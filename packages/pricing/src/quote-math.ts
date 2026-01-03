@@ -3,7 +3,15 @@ import { CurrencyAmount as UniCurrencyAmount, Token as UniToken } from '@uniswap
 import type { DexConfig, PriceQuote, RouteHopVersion } from '@aequi/core'
 import { Q18, multiplyQ18 } from './math'
 
-const pow10 = (value: number) => (value <= 0 ? 1n : 10n ** BigInt(value))
+const pow10 = (value: number) => {
+  if (value < 0) return 1n
+  try {
+    return 10n ** BigInt(value)
+  } catch (error) {
+    console.error(`[QuoteMath] Failed to compute pow10 for value: ${value}`)
+    throw error
+  }
+}
 
 const buildCurrencyAmount = (
   protocol: DexConfig['protocol'],
@@ -112,8 +120,15 @@ export const computePriceImpactBps = (
   return Number(capped)
 }
 
-export const toRawAmount = (amount: unknown): bigint =>
-  BigInt((amount as { quotient: { toString(): string } }).quotient.toString())
+export const toRawAmount = (amount: unknown): bigint => {
+  try {
+    const quotient = (amount as { quotient: { toString(): string } }).quotient.toString()
+    return BigInt(quotient)
+  } catch (error) {
+    console.error('[QuoteMath] Failed to convert amount to BigInt:', amount)
+    throw error
+  }
+}
 
 export const estimateAmountOutFromMidPrice = (
   midPriceQ18: bigint,

@@ -8,6 +8,8 @@ interface CachedToken {
   expiresAt: number
 }
 
+const NATIVE_ADDRESS = '0xEeeeeEeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+
 export interface TokenServiceOptions {
   ttlMs?: number
   preloadTokens?: Partial<Record<ChainKey, Array<Omit<TokenMetadata, 'totalSupply'>>>>
@@ -79,6 +81,17 @@ export class TokenService {
   }
 
   async getTokenMetadata(chain: ChainConfig, address: Address): Promise<TokenMetadata> {
+    if (address.toLowerCase() === NATIVE_ADDRESS.toLowerCase()) {
+      return {
+        chainId: chain.id,
+        address: NATIVE_ADDRESS as Address,
+        symbol: chain.nativeCurrencySymbol,
+        name: chain.nativeCurrencySymbol,
+        decimals: 18,
+        totalSupply: 0n,
+      }
+    }
+
     const normalized = getAddress(address)
     const key = this.cacheKey(chain.id, normalized)
     const cached = this.cache.get(key)

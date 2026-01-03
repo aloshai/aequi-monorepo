@@ -12,6 +12,7 @@ export interface DexConfig {
   version: 'v2' | 'v3'
   factoryAddress: Address
   routerAddress: Address
+  quoterAddress?: Address
   feeTiers?: number[]
   initCodeHash?: `0x${string}`
 }

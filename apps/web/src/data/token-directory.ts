@@ -36,9 +36,14 @@ export const tokenDirectory: Record<ChainKey, TokenPreset[]> = {
   ],
   bsc: [
     {
-      address: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
+      address: '0xEeeeeEeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
       symbol: 'BNB',
-      label: 'BNB · BNB',
+      label: 'BNB · Native BNB',
+    },
+    {
+      address: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
+      symbol: 'WBNB',
+      label: 'WBNB · Wrapped BNB',
     },
     {
       address: '0x55d398326f99059fF775485246999027B3197955',

@@ -128,7 +128,7 @@ const formatPriceQuote = (chain: ChainConfig, quote: PriceQuote, routePreference
 }
 export const buildServer = async () => {
     const app = Fastify({
-        logger: appConfig.server.loggerEnabled,
+        logger: false,
     })
 
     await app.register(cors, { origin: true })
@@ -301,8 +301,8 @@ export const buildServer = async () => {
 
     app.get('/price', async (request, reply) => {
         const querySchema = chainQuerySchema.extend({
-            tokenA: z.string().refine((value) => isAddress(value, { strict: false }), 'Invalid tokenA address'),
-            tokenB: z.string().refine((value) => isAddress(value, { strict: false }), 'Invalid tokenB address'),
+            tokenA: z.string().refine((value) => isAddress(value, { strict: false }) || value.toLowerCase() === NATIVE_ADDRESS.toLowerCase(), 'Invalid tokenA address'),
+            tokenB: z.string().refine((value) => isAddress(value, { strict: false }) || value.toLowerCase() === NATIVE_ADDRESS.toLowerCase(), 'Invalid tokenB address'),
             amount: z.string().optional(),
             version: z.enum(['auto', 'v2', 'v3']).optional(),
         })
@@ -330,6 +330,15 @@ export const buildServer = async () => {
             return { error: 'invalid_request', message: 'tokenA and tokenB must be different' }
         }
 
+        const isNativeAddress = (addr: string) => addr.toLowerCase() === NATIVE_ADDRESS.toLowerCase()
+        const effectiveTokenA = isNativeAddress(tokenA) ? chain.wrappedNativeAddress.toLowerCase() as Address : tokenA
+        const effectiveTokenB = isNativeAddress(tokenB) ? chain.wrappedNativeAddress.toLowerCase() as Address : tokenB
+
+        if (effectiveTokenA === effectiveTokenB) {
+            reply.status(400)
+            return { error: 'invalid_request', message: 'tokenA and tokenB must be different' }
+        }
+
         let tokenInMeta: TokenMetadata | undefined
         let tokenOutMeta: TokenMetadata | undefined
         let quote: PriceQuote | null = null
@@ -337,8 +346,8 @@ export const buildServer = async () => {
         if (parsed.data.amount) {
             try {
                 const metadata = await Promise.all([
-                    tokenService.getTokenMetadata(chain, tokenA),
-                    tokenService.getTokenMetadata(chain, tokenB),
+                    tokenService.getTokenMetadata(chain, effectiveTokenA),
+                    tokenService.getTokenMetadata(chain, effectiveTokenB),
                 ])
                 tokenInMeta = metadata[0]
                 tokenOutMeta = metadata[1]
@@ -363,7 +372,7 @@ export const buildServer = async () => {
                 routePreference,
             )
         } else {
-            quote = await priceService.getBestPrice(chain, tokenA, tokenB, undefined, routePreference)
+            quote = await priceService.getBestPrice(chain, effectiveTokenA, effectiveTokenB, undefined, routePreference)
             if (quote) {
                 tokenInMeta = quote.path[0]
                 tokenOutMeta = quote.path[quote.path.length - 1]
@@ -380,8 +389,8 @@ export const buildServer = async () => {
 
     app.get('/quote', async (request, reply) => {
         const querySchema = chainQuerySchema.extend({
-            tokenA: z.string().refine((value) => isAddress(value, { strict: false }), 'Invalid tokenA address'),
-            tokenB: z.string().refine((value) => isAddress(value, { strict: false }), 'Invalid tokenB address'),
+            tokenA: z.string().trim().refine((value) => isAddress(value, { strict: false }) || value.toLowerCase() === NATIVE_ADDRESS.toLowerCase(), 'Invalid tokenA address'),
+            tokenB: z.string().trim().refine((value) => isAddress(value, { strict: false }) || value.toLowerCase() === NATIVE_ADDRESS.toLowerCase(), 'Invalid tokenB address'),
             amount: z.string().min(1, 'Amount is required'),
             slippageBps: z.string().optional(),
             version: z.enum(['auto', 'v2', 'v3']).optional(),
@@ -410,6 +419,15 @@ export const buildServer = async () => {
             return { error: 'invalid_request', message: 'tokenA and tokenB must be different' }
         }
 
+        const isNativeAddress = (addr: string) => addr.toLowerCase() === NATIVE_ADDRESS.toLowerCase()
+        const effectiveTokenA = isNativeAddress(tokenA) ? chain.wrappedNativeAddress.toLowerCase() as Address : tokenA
+        const effectiveTokenB = isNativeAddress(tokenB) ? chain.wrappedNativeAddress.toLowerCase() as Address : tokenB
+
+        if (effectiveTokenA === effectiveTokenB) {
+            reply.status(400)
+            return { error: 'invalid_request', message: 'tokenA and tokenB must be different' }
+        }
+
         const slippage = parsed.data.slippageBps ? Number(parsed.data.slippageBps) : 50
         if (Number.isNaN(slippage)) {
             reply.status(400)
@@ -420,8 +438,8 @@ export const buildServer = async () => {
         try {
             result = await quoteService.getQuote(
                 chain,
-                tokenA,
-                tokenB,
+                effectiveTokenA,
+                effectiveTokenB,
                 parsed.data.amount,
                 slippage,
                 routePreference,
@@ -452,8 +470,16 @@ export const buildServer = async () => {
     app.post('/swap', async (request, reply) => {
         const bodySchema = z.object({
             chain: z.string().min(1),
-            tokenA: z.string().refine((value) => isAddress(value, { strict: false }), 'Invalid tokenA address'),
-            tokenB: z.string().refine((value) => isAddress(value, { strict: false }), 'Invalid tokenB address'),
+            tokenA: z.string().trim().refine((value) => {
+                const valid = isAddress(value, { strict: false }) || value.toLowerCase() === NATIVE_ADDRESS.toLowerCase()
+                if (!valid) console.log(`[Validation Failed] tokenA: "${value}" (len: ${value.length})`)
+                return valid
+            }, 'Invalid tokenA address'),
+            tokenB: z.string().trim().refine((value) => {
+                const valid = isAddress(value, { strict: false }) || value.toLowerCase() === NATIVE_ADDRESS.toLowerCase()
+                if (!valid) console.log(`[Validation Failed] tokenB: "${value}" (len: ${value.length})`)
+                return valid
+            }, 'Invalid tokenB address'),
             amount: z.string().min(1, 'Amount is required'),
             slippageBps: z.coerce.number().optional(),
             version: z.enum(['auto', 'v2', 'v3']).optional(),
@@ -487,8 +513,7 @@ export const buildServer = async () => {
 
         // Handle Native Tokens
         const isNativeAddress = (addr: string) => 
-            addr.toLowerCase() === NATIVE_ADDRESS.toLowerCase() || 
-            addr.toLowerCase() === chain.wrappedNativeAddress.toLowerCase()
+            addr.toLowerCase() === NATIVE_ADDRESS.toLowerCase()
 
         const useNativeInput = isNativeAddress(tokenA)
         const useNativeOutput = isNativeAddress(tokenB)
@@ -506,6 +531,8 @@ export const buildServer = async () => {
         const slippageInput = Number.isFinite(parsed.data.slippageBps) ? parsed.data.slippageBps! : undefined
         const slippageBps = slippageInput ?? 50
         const deadlineSeconds = Number.isFinite(parsed.data.deadlineSeconds) ? parsed.data.deadlineSeconds! : 600
+
+        console.log(`[API] Swap request: ${effectiveTokenA} -> ${effectiveTokenB}, Amount: ${parsed.data.amount}`)
 
         let quoteResult: QuoteResult | null = null
         try {
@@ -623,6 +650,7 @@ export const buildServer = async () => {
 }
 
 export const startServer = async () => {
+    console.log('Starting server with Native Token support...')
     const app = await buildServer()
     const port = appConfig.server.port
     const host = appConfig.server.host

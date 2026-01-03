@@ -33,10 +33,13 @@ export class QuoteService {
       throw new Error('Amount must be greater than zero')
     }
 
+    console.log(`[QuoteService] Requesting quote for ${tokenIn.symbol} -> ${tokenOut.symbol} (Amount: ${amountIn})`)
     const quote = await this.priceService.getBestQuoteForTokens(chain, tokenIn, tokenOut, amountIn, preference)
     if (!quote) {
+      console.log('[QuoteService] No quote returned from PriceService')
       return null
     }
+    console.log(`[QuoteService] Quote received: ${quote.amountOut} out`)
 
     const boundedSlippage = clampSlippage(slippageBps)
     const slippageAmount = (quote.amountOut * BigInt(boundedSlippage)) / 10000n

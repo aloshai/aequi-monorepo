@@ -325,7 +325,12 @@ export class SwapBuilder {
 
       executorCalls.push(plannedCall)
       tokensToFlush.add(tokenIn.address)
-      tokensToFlush.add(tokenOut.address)
+      
+      // Only flush output token if it's coming back to executor (not going directly to recipient)
+      if (hopRecipient === executorAddress) {
+        tokensToFlush.add(tokenOut.address)
+      }
+      
       calls.push({
         target: plannedCall.target,
         allowFailure: false,
@@ -384,7 +389,7 @@ export class SwapBuilder {
       call: {
         to: executorAddress,
         data: executorData,
-        value: 0n,
+        value: useNativeInput ? quote.amountIn : 0n,
       },
       executor: {
         pulls,
