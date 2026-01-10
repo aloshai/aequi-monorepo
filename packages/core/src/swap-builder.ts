@@ -26,7 +26,7 @@ export interface SwapBuildParams {
 }
 
 export interface SwapTransaction {
-  kind: 'direct' | 'executor'
+  kind: 'executor'
   dexId: string
   router: Address
   spender: Address
@@ -35,12 +35,12 @@ export interface SwapTransaction {
   amountOutMinimum: bigint
   deadline: number
   calls: ExecutorCallPlan[]
-  call?: {
+  call: {
     to: Address
     data: Hex
     value: bigint
   }
-  executor?: {
+  executor: {
     pulls: { token: Address; amount: bigint }[]
     approvals: { token: Address; spender: Address; amount: bigint; revokeAfter: boolean }[]
     calls: { target: Address; value: bigint; data: Hex; injectToken: Address; injectOffset: bigint }[]
@@ -91,7 +91,6 @@ export class SwapBuilder {
       throw new Error('Quote is missing source information')
     }
 
-    const uniqueDexes = new Set(params.quote.sources.map((source) => source.dexId))
     const deadlineSeconds = params.deadlineSeconds > 0 ? params.deadlineSeconds : 180
     const deadline = Math.floor(Date.now() / 1000) + deadlineSeconds
     const boundedSlippage = clampSlippage(params.slippageBps)
@@ -99,21 +98,7 @@ export class SwapBuilder {
       ? params.amountOutMin
       : this.applySlippage(params.quote.amountOut, boundedSlippage)
 
-    if (uniqueDexes.size === 1 && !params.useNativeInput && !params.useNativeOutput) {
-      const dexId = params.quote.sources[0]!.dexId
-      const dex = chain.dexes.find((entry) => entry.id === dexId)
-      if (!dex) {
-        throw new Error(`DEX ${dexId} is not configured for chain ${chain.name}`)
-      }
-      return this.buildDirectSwap(
-        dex,
-        params.quote,
-        params.recipient,
-        amountOutMinimum,
-        BigInt(deadline),
-      )
-    }
-
+    // Always use executor for consistent and secure swap execution
     return this.buildExecutorSwap(
       chain,
       params.quote,
@@ -131,39 +116,6 @@ export class SwapBuilder {
     }
     const penalty = (amount * BigInt(slippageBps)) / 10000n
     return amount > penalty ? amount - penalty : 0n
-  }
-
-  private buildDirectSwap(
-    dex: { id: string; routerAddress: Address; version: 'v2' | 'v3' },
-    quote: PriceQuote,
-    recipient: Address,
-    deadline: bigint,
-    amountOutMin: bigint,
-  ): SwapTransaction {
-    if (dex.version === 'v2' && quote.routeAddresses.length < 2) {
-      throw new Error('V2 route must contain at least two tokens')
-    }
-
-    const callData = dex.version === 'v2'
-      ? this.encodeV2SwapCall(quote, recipient, amountOutMin, deadline)
-      : this.encodeV3SwapCall(quote, recipient, amountOutMin, deadline)
-
-    return {
-      kind: 'direct',
-      dexId: dex.id,
-      router: dex.routerAddress,
-      spender: dex.routerAddress,
-      amountIn: quote.amountIn,
-      amountOut: quote.amountOut,
-      amountOutMinimum: amountOutMin,
-      deadline: Number(deadline),
-      calls: [],
-      call: {
-        to: dex.routerAddress,
-        data: callData,
-        value: 0n,
-      },
-    }
   }
 
   private buildExecutorSwap(

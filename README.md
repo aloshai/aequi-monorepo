@@ -4,17 +4,24 @@ Aequi is a DEX aggregator and swap executor for Ethereum and BSC. The monorepo i
 
 ## Architecture
 
-The platform currently operates with a **router-based** approach, where swaps are executed through DEX router contracts (Uniswap/Pancake). For complex multi-hop routes, the AequiExecutor contract orchestrates the sequence of calls with automatic approval management and balance reconciliation.
+The platform operates with an **executor-based** approach, where all swaps are executed through the AequiExecutor contract. This provides a consistent, secure execution path for all swap types - from simple single-hop swaps to complex multi-DEX routes.
 
 ### Current Implementation
-- Single-hop swaps use DEX router contracts directly
-- Multi-hop swaps use AequiExecutor for atomic execution
+- All swaps use AequiExecutor for atomic execution
+- Automatic approval management with per-hop revocation
 - Native token support (BNB/ETH) with automatic wrap/unwrap
 - Gas estimation provided by backend RPC simulation
 - Route preference system (auto/v2/v3) for optimal path selection
+- Inter-hop balance reconciliation and slippage protection
+
+### Benefits
+- **Consistency**: Single execution path for all swap types
+- **Security**: Centralized approval management and balance tracking
+- **Flexibility**: Supports single-hop, multi-hop, and cross-DEX routes seamlessly
+- **Safety**: Built-in safeguards against approval exploits and balance drift
 
 ### Roadmap
-Direct pool integration is planned to reduce gas costs by 25-30% through pool-level swap execution, eliminating router overhead. This will enable flash swap capabilities and improved MEV protection while maintaining the current security model.
+Direct pool integration is planned to reduce gas costs by 25-30% through pool-level swap execution within the executor, eliminating router overhead. This will enable flash swap capabilities and improved MEV protection while maintaining the current security model.
 
 ## Packages
 - **apps/server** – Fastify API that discovers pools, prices routes, returns quotes, and builds calldata using `@aequi/core` and `@aequi/pricing`.

@@ -7,10 +7,12 @@ Shared types, ABIs, and swap construction utilities used by the Aequi server and
 - Token and quote shapes (`TokenMetadata`, `PriceQuote`, `QuoteResult`)
 - ABIs for AequiExecutor and Uniswap/Pancake V2/V3 routers (`src/abi.ts`)
 - `SwapBuilder` to turn priced routes into transaction calldata
+- Custom error hierarchy for structured error handling
+- Structured logging utilities
 
 ## SwapBuilder
 
-Converts a `PriceQuote` into executable transaction calldata. Outputs either direct router calls or AequiExecutor multicall payloads.
+Converts a `PriceQuote` into executable transaction calldata using **AequiExecutor** for all swaps.
 
 ### Configuration
 ```ts
@@ -33,21 +35,23 @@ const tx = builder.build(chainConfig, {
 })
 
 // Returns SwapTransaction with:
-// - kind: 'direct' | 'executor'
+// - kind: 'executor' (always)
 // - call: { to, data, value }
-// - executor: { pulls, approvals, calls, tokensToFlush } (if multicall)
+// - executor: { pulls, approvals, calls, tokensToFlush }
 ```
 
-### Output Modes
+### Executor-Only Architecture
 
-**Direct Router** (single DEX, homogeneous hops):
-- V2: `swapExactTokensForTokens`
-- V3: `exactInput` with fee-encoded path
+All swaps are executed through **AequiExecutor** for:
+- **Consistency**: Single execution path for all swap types
+- **Security**: Centralized approval management and balance reconciliation
+- **Flexibility**: Supports single-hop, multi-hop, and cross-DEX routes
+- **Native Support**: Automatic wrap/unwrap for BNB/ETH
 
-**AequiExecutor Multicall** (multi-DEX or mixed versions):
+**Executor Multicall Features**:
 - Structured payload with pulls, approvals, calls, tokensToFlush
 - Dynamic amount injection via `injectToken`/`injectOffset`
-- Per-hop approval revocation
+- Per-hop approval revocation for security
 - Native wrap/unwrap calls when needed
 
 ### Native Token Support
@@ -55,7 +59,14 @@ const tx = builder.build(chainConfig, {
 - `useNativeOutput`: adds WETH withdraw call with amount injection
 - Executor tracks WETH in `tokensToFlush` for delta reconciliation
 
+## Error Handling
+
+Custom error hierarchy with error codes:
+- `ValidationError`, `RouteNotFoundError`, `InsufficientLiquidityError`
+- `RPCError`, `RPCTimeoutError`, `ContractExecutionError`
+- All errors include metadata, HTTP status codes, and retry flags
+
 ## Notes
-- V3 calldata requires homogeneous V3 hops (mixed routes fall back to executor path).
-- Slippage is clamped internally; pass already-bounded values when available.
-- Chain config must include DEX router addresses and versions for route validation.
+- All swaps use AequiExecutor regardless of route complexity
+- Slippage is clamped internally; pass already-bounded values when available
+- Chain config must include DEX router addresses and executor addresses
