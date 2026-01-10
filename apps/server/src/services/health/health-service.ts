@@ -36,6 +36,13 @@ export class HealthService {
     for (const chainKey of Object.keys(SUPPORTED_CHAINS)) {
       try {
         const chain = getChainConfig(chainKey);
+        if (!chain) {
+          chainStatuses[chainKey] = {
+            configured: false,
+            rpcAvailable: false,
+          };
+          continue;
+        }
         const rpcCheck = await this.checkChainRpc(chain);
         
         chainStatuses[chainKey] = {
@@ -86,7 +93,7 @@ export class HealthService {
     try {
       // Simple check - try to import client provider
       const { DefaultChainClientProvider } = await import(
-        '../services/clients/default-chain-client-provider'
+        '../clients/default-chain-client-provider'
       );
       const provider = new DefaultChainClientProvider();
       const client = await provider.getClient(chain);

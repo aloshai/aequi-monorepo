@@ -1,6 +1,5 @@
-import { useMemo } from 'react'
-import type { QuoteResponse, RoutePool, RouteToken } from '../types/api'
-import { getDexLogo, getTokenLogo } from '../utils/logos'
+import type { QuoteResponse, RouteToken } from '../types/api'
+import { getTokenLogo } from '../utils/logos'
 
 interface QuoteAnalysisProps {
   quote: QuoteResponse

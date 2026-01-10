@@ -1,8 +1,9 @@
 import { getAddress, type Address } from 'viem'
 import type { ChainKey, TokenMetadata } from '@aequi/core'
+import { Q18 } from '@aequi/pricing'
 import { appConfig } from './app-config'
 
-export const Q18 = 10n ** 18n
+export { Q18 }
 
 export const DEFAULT_TOKEN_CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
 

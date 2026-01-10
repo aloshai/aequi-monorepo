@@ -1,4 +1,5 @@
 import { formatUnits } from 'viem'
+export { defaultAmountForDecimals, descaleFromQ18 } from '@aequi/pricing'
 
 export const parseAmountToUnits = (value: string, decimals: number): bigint => {
   const trimmed = value.trim()
@@ -24,23 +25,4 @@ export const parseAmountToUnits = (value: string, decimals: number): bigint => {
 
 export const formatAmountFromUnits = (value: bigint, decimals: number): string => {
   return formatUnits(value, decimals)
-}
-
-export const defaultAmountForDecimals = (decimals: number): bigint => {
-  if (decimals < 0) {
-    return 1n
-  }
-  return 10n ** BigInt(decimals)
-}
-
-export const descaleFromQ18 = (value: bigint, decimals: number): bigint => {
-  if (decimals === 18) {
-    return value
-  }
-  if (decimals > 18) {
-    const multiplier = 10n ** BigInt(decimals - 18)
-    return value * multiplier
-  }
-  const divisor = 10n ** BigInt(18 - decimals)
-  return value / divisor
 }

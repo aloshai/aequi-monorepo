@@ -1,27 +1,13 @@
-import { CurrencyAmount as CakeCurrencyAmount, Token as CakeToken } from '@pancakeswap/swap-sdk-core'
-import { Pair as CakePair } from '@pancakeswap/v2-sdk'
-import { Pool as CakePool } from '@pancakeswap/v3-sdk'
-import { CurrencyAmount as UniCurrencyAmount, Token as UniToken } from '@uniswap/sdk-core'
-import { Pair as UniPair } from '@uniswap/v2-sdk'
-import { Pool as UniPool } from '@uniswap/v3-sdk'
 import type { Address, PublicClient } from 'viem'
 import type { ChainConfig, DexConfig, PriceQuote, RouteHopVersion, TokenMetadata } from '@aequi/core'
 import { AEQUI_LENS_ABI } from '@aequi/core'
-import { V2_FACTORY_ABI, V2_PAIR_ABI, V3_FACTORY_ABI, V3_POOL_ABI, V3_QUOTER_ABI, ZERO_ADDRESS, normalizeAddress, AEQUI_LENS_ADDRESSES, sameAddress } from './contracts'
-import { minBigInt, multiplyQ18, scaleToQ18 } from './math'
-import {
-  computeExecutionPriceQ18,
-  computeMidPriceQ18FromPrice,
-  computeMidPriceQ18FromReserves,
-  computePriceImpactBps,
-  estimateAmountOutFromMidPrice,
-  estimateGasForRoute,
-  getV2AmountOut,
-  toRawAmount,
-} from './quote-math'
+import { V2_FACTORY_ABI, V2_PAIR_ABI, V3_FACTORY_ABI, V3_POOL_ABI, ZERO_ADDRESS, normalizeAddress, AEQUI_LENS_ADDRESSES, sameAddress } from './contracts'
+import { minBigInt, multiplyQ18 } from './math'
+import { estimateGasForRoute } from './quote-math'
 import { selectBestQuote } from './route-planner'
 import type { ChainClientProvider, PoolDiscoveryConfig } from './types'
 import type { TokenService } from './token-service'
+import { dexRegistry } from './dex-adapters/registry'
 
 interface V2ReserveSnapshot {
   pairAddress: Address
@@ -147,68 +133,75 @@ export class PoolDiscovery {
         }
       }
 
-      // V3 batch temporarily disabled due to revert issues - will investigate
-      // if (poolsByType.v3Pools.length > 0) {
-      //   try {
-      //     const v3Addresses = poolsByType.v3Pools.map((p) => p.poolAddress)
-      //     console.log(`[PoolDiscovery] Using AequiLens batch for ${v3Addresses.length} V3 pools`)
-      //     const batchResult = await client.readContract({
-      //       address: lensAddress,
-      //       abi: AEQUI_LENS_ABI,
-      //       functionName: 'batchGetV3PoolData',
-      //       args: [v3Addresses],
-      //     })
-      //     ...
-      //   } catch (error) {
-      //     console.warn(`[PoolDiscovery] AequiLens V3 batch failed, falling back to multicall:`, (error as Error).message)
-      //   }
-      // }
-
-      // Fallback to multicall for V3 pools
       if (poolsByType.v3Pools.length > 0) {
-        console.log(`[PoolDiscovery] Using multicall for V3 pools (batch disabled)`)
-        const poolDataCalls: any[] = []
-        const poolMap: { poolAddress: Address; dex: DexConfig; fee: number; startIndex: number }[] = []
+        try {
+          const v3Addresses = poolsByType.v3Pools.map((p) => p.poolAddress)
+          console.log(`[PoolDiscovery] Using AequiLens batch for ${v3Addresses.length} V3 pools`)
+          const batchResult = await client.readContract({
+            address: lensAddress,
+            abi: AEQUI_LENS_ABI,
+            functionName: 'batchGetV3PoolData',
+            args: [v3Addresses],
+          })
 
-        poolsByType.v3Pools.forEach((item) => {
-          poolDataCalls.push(
-            { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'slot0' },
-            { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'liquidity' },
-            { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'token0' },
-            { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'token1' },
-          )
-          poolMap.push({ poolAddress: item.poolAddress, dex: item.dex, fee: item.fee, startIndex: poolDataCalls.length - 4 })
-        })
-
-        const poolDataResults = await client.multicall({
-          allowFailure: true,
-          contracts: poolDataCalls,
-        })
-
-        poolMap.forEach((item) => {
-          const slotRes = poolDataResults[item.startIndex]
-          const liquidityRes = poolDataResults[item.startIndex + 1]
-          const token0Res = poolDataResults[item.startIndex + 2]
-          const token1Res = poolDataResults[item.startIndex + 3]
-
-          if (slotRes && liquidityRes && token0Res && token1Res && 
-              slotRes.status === 'success' && liquidityRes.status === 'success' &&
-              token0Res.status === 'success' && token1Res.status === 'success') {
-            const slotData = slotRes.result as readonly [bigint, number, number, number, number, number, boolean]
-            const liquidityValue = liquidityRes.result as bigint
-            const token0Address = normalizeAddress(token0Res.result as Address)
-            const token1Address = normalizeAddress(token1Res.result as Address)
-
-            v3PoolData.set(item.poolAddress, {
-              sqrtPriceX96: slotData[0],
-              tick: Number(slotData[1]),
-              liquidity: liquidityValue,
-              token0: token0Address,
-              token1: token1Address,
-              success: true,
+          batchResult.forEach((data: any, idx: number) => {
+            const poolAddr = v3Addresses[idx]!
+            v3PoolData.set(poolAddr, {
+              sqrtPriceX96: data.sqrtPriceX96,
+              tick: Number(data.tick),
+              liquidity: data.liquidity,
+              token0: data.token0,
+              token1: data.token1,
+              success: data.exists,
             })
-          }
-        })
+          })
+        } catch (error) {
+          console.warn(`[PoolDiscovery] AequiLens V3 batch failed, falling back to multicall:`, (error as Error).message)
+          
+          // Fallback to multicall
+          const poolDataCalls: any[] = []
+          const poolMap: { poolAddress: Address; dex: DexConfig; fee: number; startIndex: number }[] = []
+
+          poolsByType.v3Pools.forEach((item) => {
+            poolDataCalls.push(
+              { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'slot0' },
+              { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'liquidity' },
+              { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'token0' },
+              { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'token1' },
+            )
+            poolMap.push({ poolAddress: item.poolAddress, dex: item.dex, fee: item.fee, startIndex: poolDataCalls.length - 4 })
+          })
+
+          const poolDataResults = await client.multicall({
+            allowFailure: true,
+            contracts: poolDataCalls,
+          })
+
+          poolMap.forEach((item) => {
+            const slotRes = poolDataResults[item.startIndex]
+            const liquidityRes = poolDataResults[item.startIndex + 1]
+            const token0Res = poolDataResults[item.startIndex + 2]
+            const token1Res = poolDataResults[item.startIndex + 3]
+
+            if (slotRes && liquidityRes && token0Res && token1Res && 
+                slotRes.status === 'success' && liquidityRes.status === 'success' &&
+                token0Res.status === 'success' && token1Res.status === 'success') {
+              const slotData = slotRes.result as readonly [bigint, number, number, number, number, number, boolean]
+              const liquidityValue = liquidityRes.result as bigint
+              const token0Address = normalizeAddress(token0Res.result as Address)
+              const token1Address = normalizeAddress(token1Res.result as Address)
+
+              v3PoolData.set(item.poolAddress, {
+                sqrtPriceX96: slotData[0],
+                tick: Number(slotData[1]),
+                liquidity: liquidityValue,
+                token0: token0Address,
+                token1: token1Address,
+                success: true,
+              })
+            }
+          })
+        }
       }
     } else if (!lensAddress && (poolsByType.v2Pools.length > 0 || poolsByType.v3Pools.length > 0)) {
       console.log(`[PoolDiscovery] Falling back to multicall (lens address not found)`)
@@ -310,53 +303,30 @@ export class PoolDiscovery {
           continue
         }
 
-        const amountOut = getV2AmountOut(amountIn, reserveIn, reserveOut)
-        if (amountOut === 0n) continue
+        const adapter = dexRegistry.get(item.dex.protocol, 'v2')
+        if (!adapter) {
+          console.warn(`[PoolDiscovery] No adapter found for ${item.dex.protocol} V2`)
+          continue
+        }
 
-        const midPriceQ18 = computeMidPriceQ18FromReserves(
-          item.dex.protocol,
-          reserveIn,
-          reserveOut,
-          tokenIn.decimals,
-          tokenOut.decimals,
-        )
-        const executionPriceQ18 = computeExecutionPriceQ18(amountIn, amountOut, tokenIn.decimals, tokenOut.decimals)
-        const priceImpactBps = computePriceImpactBps(midPriceQ18, amountIn, amountOut, tokenIn.decimals, tokenOut.decimals)
-
-        const hopVersions: RouteHopVersion[] = ['v2']
-        const estimatedGasUnits = estimateGasForRoute(hopVersions)
-        const estimatedGasCostWei = gasPriceWei ? gasPriceWei * estimatedGasUnits : null
-
-        quotes.push({
-          chain: chain.key,
+        const quote = await adapter.computeV2Quote!({
+          chainId: chain.id,
+          chainKey: chain.key,
+          dex: item.dex,
+          tokenIn,
+          tokenOut,
           amountIn,
-          amountOut,
-          priceQ18: executionPriceQ18,
-          executionPriceQ18,
-          midPriceQ18,
-          priceImpactBps,
-          path: [tokenIn, tokenOut],
-          routeAddresses: [tokenIn.address, tokenOut.address],
-          sources: [
-            {
-              dexId: item.dex.id,
-              poolAddress: item.poolAddress,
-              amountIn,
-              amountOut,
-              reserves: {
-                reserve0: poolData.reserve0,
-                reserve1: poolData.reserve1,
-                token0: poolData.token0,
-                token1: sameAddress(poolData.token0, tokenIn.address) ? tokenOut.address : tokenIn.address,
-              },
-            },
-          ],
-          liquidityScore: reserveIn + reserveOut,
-          hopVersions,
-          estimatedGasUnits,
-          estimatedGasCostWei,
+          poolAddress: item.poolAddress,
+          reserve0: poolData.reserve0,
+          reserve1: poolData.reserve1,
+          token0: poolData.token0,
           gasPriceWei,
+          minReserveThreshold: this.config.minV2ReserveThreshold,
         })
+
+        if (quote) {
+          quotes.push(quote)
+        }
       } catch (error) {
         console.warn(`[PoolDiscovery] Error processing V2 pool ${item.poolAddress}:`, (error as Error).message)
       }
@@ -385,111 +355,37 @@ export class PoolDiscovery {
     }
 
     if (v3Candidates.length > 0) {
-      const quoterCalls = v3Candidates.map((candidate) => {
-        if (!candidate.dex.quoterAddress) {
-          console.warn(`[PoolDiscovery] Missing quoter address for DEX ${candidate.dex.id}`)
-          return null
-        }
-        return {
-          address: candidate.dex.quoterAddress,
-          abi: V3_QUOTER_ABI,
-          functionName: 'quoteExactInputSingle',
-          args: [{
-            tokenIn: tokenIn.address,
-            tokenOut: tokenOut.address,
-            amountIn,
-            fee: candidate.snapshot.fee,
-            sqrtPriceLimitX96: 0n,
-          }],
-        }
-      })
-
-      const validCalls = quoterCalls.filter((call) => call !== null)
-      if (validCalls.length > 0) {
+      for (const candidate of v3Candidates) {
         try {
-          const quoterResults = await client.multicall({
-            allowFailure: true,
-            contracts: validCalls as any[],
+          const adapter = dexRegistry.get(candidate.dex.protocol, 'v3')
+          if (!adapter) {
+            console.warn(`[PoolDiscovery] No adapter found for ${candidate.dex.protocol} V3`)
+            continue
+          }
+
+          const quote = await adapter.computeV3Quote!({
+            chainId: chain.id,
+            chainKey: chain.key,
+            dex: candidate.dex,
+            tokenIn,
+            tokenOut,
+            amountIn,
+            poolAddress: candidate.snapshot.poolAddress,
+            sqrtPriceX96: candidate.snapshot.sqrtPriceX96,
+            liquidity: candidate.snapshot.liquidity,
+            tick: candidate.snapshot.tick,
+            fee: candidate.snapshot.fee,
+            token0: candidate.snapshot.token0,
+            token1: candidate.snapshot.token1,
+            gasPriceWei,
+            client,
           })
 
-          let resultIndex = 0
-          for (let i = 0; i < v3Candidates.length; i++) {
-            const candidate = v3Candidates[i]!
-            if (!candidate.dex.quoterAddress) continue
-
-            const result = quoterResults[resultIndex]
-            resultIndex++
-
-            if (result && result.status === 'success') {
-              const [amountOut, sqrtPriceX96After, initializedTicksCrossed, gasEstimate] = result.result as readonly [bigint, bigint, number, bigint]
-              
-              if (amountOut > 0n) {
-                // Reconstruct quote from Quoter result
-                const executionPriceQ18 = computeExecutionPriceQ18(amountIn, amountOut, tokenIn.decimals, tokenOut.decimals)
-                // Mid price is approximate from slot0, but execution price is exact
-                // We can use slot0 price for mid price
-                const tokenInInstance = new UniToken(tokenIn.chainId, tokenIn.address, tokenIn.decimals, tokenIn.symbol, tokenIn.name)
-                const tokenOutInstance = new UniToken(tokenOut.chainId, tokenOut.address, tokenOut.decimals, tokenOut.symbol, tokenOut.name)
-                const pool = new UniPool(
-                  tokenInInstance,
-                  tokenOutInstance,
-                  candidate.snapshot.fee,
-                  candidate.snapshot.sqrtPriceX96.toString(),
-                  candidate.snapshot.liquidity.toString(),
-                  candidate.snapshot.tick
-                )
-                const midPriceQ18 = computeMidPriceQ18FromPrice(candidate.dex.protocol, tokenInInstance as any, tokenOut.decimals, pool.token0Price)
-                
-                const priceImpactBps = computePriceImpactBps(
-                  midPriceQ18,
-                  amountIn,
-                  amountOut,
-                  tokenIn.decimals,
-                  tokenOut.decimals,
-                )
-
-                const hopVersions: RouteHopVersion[] = ['v3']
-                const estimatedGasUnits = estimateGasForRoute(hopVersions) // Or use gasEstimate from quoter? Quoter gas is simulation gas, might be high.
-                const estimatedGasCostWei = gasPriceWei ? gasPriceWei * estimatedGasUnits : null
-
-                quotes.push({
-                  chain: chain.key,
-                  amountIn,
-                  amountOut,
-                  priceQ18: executionPriceQ18,
-                  executionPriceQ18,
-                  midPriceQ18,
-                  priceImpactBps,
-                  path: [tokenIn, tokenOut],
-                  routeAddresses: [tokenIn.address, tokenOut.address],
-                  sources: [
-                    {
-                      dexId: candidate.dex.id,
-                      poolAddress: candidate.snapshot.poolAddress,
-                      feeTier: candidate.snapshot.fee,
-                      amountIn,
-                      amountOut,
-                      reserves: {
-                        liquidity: candidate.snapshot.liquidity,
-                        token0: candidate.snapshot.token0,
-                        token1: candidate.snapshot.token1,
-                      },
-                    },
-                  ],
-                  liquidityScore: candidate.snapshot.liquidity,
-                  hopVersions,
-                  estimatedGasUnits,
-                  estimatedGasCostWei,
-                  gasPriceWei,
-                })
-              }
-            } else {
-               // Log failure if needed, but allowFailure=true handles it
-               // console.warn(`[PoolDiscovery] Quoter failed for ${candidate.dex.id} pool ${candidate.snapshot.poolAddress}`)
-            }
+          if (quote) {
+            quotes.push(quote)
           }
         } catch (error) {
-          console.warn(`[PoolDiscovery] Quoter multicall failed:`, (error as Error).message)
+          console.warn(`[PoolDiscovery] Error processing V3 pool ${candidate.snapshot.poolAddress}:`, (error as Error).message)
         }
       }
     }
@@ -605,139 +501,5 @@ export class PoolDiscovery {
     const metadata = await this.tokenService.getTokenMetadata(chain, lower as Address)
     cache.set(lower, metadata)
     return metadata
-  }
-
-  private async computeV2Quote(
-    chain: ChainConfig,
-    dex: DexConfig,
-    tokenIn: TokenMetadata,
-    tokenOut: TokenMetadata,
-    amountIn: bigint,
-    gasPriceWei: bigint | null,
-    snapshot: V2ReserveSnapshot,
-  ): Promise<PriceQuote | null> {
-    if (snapshot.reserveIn < this.config.minV2ReserveThreshold || snapshot.reserveOut < this.config.minV2ReserveThreshold) {
-      return null
-    }
-
-    const { tokenInInstance, tokenOutInstance } = this.buildV2Tokens(dex, tokenIn, tokenOut)
-
-    const reserveInAmount =
-      dex.protocol === 'uniswap'
-        ? UniCurrencyAmount.fromRawAmount(tokenInInstance as UniToken, snapshot.reserveIn.toString())
-        : CakeCurrencyAmount.fromRawAmount(tokenInInstance as CakeToken, snapshot.reserveIn.toString())
-
-    const reserveOutAmount =
-      dex.protocol === 'uniswap'
-        ? UniCurrencyAmount.fromRawAmount(tokenOutInstance as UniToken, snapshot.reserveOut.toString())
-        : CakeCurrencyAmount.fromRawAmount(tokenOutInstance as CakeToken, snapshot.reserveOut.toString())
-
-    const pair =
-      dex.protocol === 'uniswap'
-        ? new UniPair(reserveInAmount as any, reserveOutAmount as any)
-        : new CakePair(reserveInAmount as any, reserveOutAmount as any)
-
-    const inputAmount =
-      dex.protocol === 'uniswap'
-        ? UniCurrencyAmount.fromRawAmount(tokenInInstance as UniToken, amountIn.toString())
-        : CakeCurrencyAmount.fromRawAmount(tokenInInstance as CakeToken, amountIn.toString())
-
-    let amountOutRaw: bigint
-    try {
-      const [amountOutCurrency] = pair.getOutputAmount(inputAmount as any)
-      amountOutRaw = toRawAmount(amountOutCurrency)
-    } catch (error) {
-      console.warn(`[PoolDiscovery] V2 quote failed for ${tokenIn.symbol}->${tokenOut.symbol}:`, (error as Error).message)
-      return null
-    }
-
-    if (amountOutRaw <= 0n) {
-      return null
-    }
-
-    const price = pair.priceOf(tokenInInstance as any)
-    const midPriceQ18 = computeMidPriceQ18FromPrice(
-      dex.protocol,
-      tokenInInstance as any,
-      tokenOut.decimals,
-      price,
-    )
-    const executionPriceQ18 = computeExecutionPriceQ18(amountIn, amountOutRaw, tokenIn.decimals, tokenOut.decimals)
-    const priceImpactBps = computePriceImpactBps(
-      midPriceQ18,
-      amountIn,
-      amountOutRaw,
-      tokenIn.decimals,
-      tokenOut.decimals,
-    )
-
-    const liquidityScore = minBigInt(
-      scaleToQ18(snapshot.reserveIn, tokenIn.decimals),
-      scaleToQ18(snapshot.reserveOut, tokenOut.decimals),
-    )
-
-    const hopVersions: RouteHopVersion[] = ['v2']
-    const estimatedGasUnits = estimateGasForRoute(hopVersions)
-    const estimatedGasCostWei = gasPriceWei ? gasPriceWei * estimatedGasUnits : null
-
-    return {
-      chain: chain.key,
-      amountIn,
-      amountOut: amountOutRaw,
-      priceQ18: executionPriceQ18,
-      executionPriceQ18,
-      midPriceQ18,
-      priceImpactBps,
-      path: [tokenIn, tokenOut],
-      routeAddresses: [tokenIn.address, tokenOut.address],
-      sources: [
-        {
-          dexId: dex.id,
-          poolAddress: snapshot.pairAddress,
-          amountIn,
-          amountOut: amountOutRaw,
-          reserves: {
-            reserve0: snapshot.reserve0,
-            reserve1: snapshot.reserve1,
-            token0: snapshot.token0,
-            token1: snapshot.token1,
-          },
-        },
-      ],
-      liquidityScore,
-      hopVersions,
-      estimatedGasUnits,
-      estimatedGasCostWei,
-      gasPriceWei,
-    }
-  }
-
-  private async computeV3Quote(
-    chain: ChainConfig,
-    dex: DexConfig,
-    tokenIn: TokenMetadata,
-    tokenOut: TokenMetadata,
-    amountIn: bigint,
-    gasPriceWei: bigint | null,
-    snapshot: V3PoolSnapshot,
-  ): Promise<PriceQuote | null> {
-    // V3 SDK-based quotes removed - use Quoter contract in fetchDirectQuotes instead
-    // This method is now a placeholder and should not be called
-    console.warn(`[PoolDiscovery] computeV3Quote called but V3 quotes should use Quoter contract`)
-    return null
-  }
-
-  private buildV2Tokens(dex: DexConfig, tokenIn: TokenMetadata, tokenOut: TokenMetadata) {
-    const tokenInInstance =
-      dex.protocol === 'uniswap'
-        ? new UniToken(tokenIn.chainId, tokenIn.address, tokenIn.decimals, tokenIn.symbol, tokenIn.name)
-        : new CakeToken(tokenIn.chainId, tokenIn.address, tokenIn.decimals, tokenIn.symbol, tokenIn.name)
-
-    const tokenOutInstance =
-      dex.protocol === 'uniswap'
-        ? new UniToken(tokenOut.chainId, tokenOut.address, tokenOut.decimals, tokenOut.symbol, tokenOut.name)
-        : new CakeToken(tokenOut.chainId, tokenOut.address, tokenOut.decimals, tokenOut.symbol, tokenOut.name)
-
-    return { tokenInInstance, tokenOutInstance }
   }
 }

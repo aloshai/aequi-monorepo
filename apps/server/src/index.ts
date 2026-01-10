@@ -20,6 +20,7 @@ import {
 import { appConfig } from './config/app-config'
 import { ExchangeService } from './services/exchange/exchange-service'
 import { TokenService, PriceService, PoolDiscovery } from '@aequi/pricing'
+import { registerDefaultAdapters } from '@aequi/dex-adapters'
 import { QuoteService } from './services/quote/quote-service'
 import { AllowanceService } from './services/tokens/allowance-service'
 import { SwapBuilder } from '@aequi/core'
@@ -28,6 +29,9 @@ import { DefaultChainClientProvider } from './services/clients/default-chain-cli
 import { normalizeAddress } from './utils/trading'
 import { HealthService } from './services/health/health-service'
 import type { ChainConfig, PriceQuote, QuoteResult, RoutePreference, TokenMetadata } from './types'
+
+// Register default DEX adapters
+registerDefaultAdapters()
 
 const chainClientProvider = new DefaultChainClientProvider()
 const exchangeService = new ExchangeService()
@@ -349,6 +353,7 @@ export const buildServer = async () => {
         const tokenA = normalizeAddress(parsed.data.tokenA).toLowerCase() as Address
         const tokenB = normalizeAddress(parsed.data.tokenB).toLowerCase() as Address
         const routePreference = resolveRoutePreference(parsed.data.version)
+        const forceMultiHop = parsed.data.forceMultiHop === 'true'
 
         if (tokenA === tokenB) {
             reply.status(400)
