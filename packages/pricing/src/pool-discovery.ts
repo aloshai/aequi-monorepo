@@ -6,14 +6,17 @@ import { Pair as UniPair } from '@uniswap/v2-sdk'
 import { Pool as UniPool } from '@uniswap/v3-sdk'
 import type { Address, PublicClient } from 'viem'
 import type { ChainConfig, DexConfig, PriceQuote, RouteHopVersion, TokenMetadata } from '@aequi/core'
-import { V2_FACTORY_ABI, V2_PAIR_ABI, V3_FACTORY_ABI, V3_POOL_ABI, V3_QUOTER_ABI, ZERO_ADDRESS, normalizeAddress } from './contracts'
+import { AEQUI_LENS_ABI } from '@aequi/core'
+import { V2_FACTORY_ABI, V2_PAIR_ABI, V3_FACTORY_ABI, V3_POOL_ABI, V3_QUOTER_ABI, ZERO_ADDRESS, normalizeAddress, AEQUI_LENS_ADDRESSES, sameAddress } from './contracts'
 import { minBigInt, multiplyQ18, scaleToQ18 } from './math'
 import {
   computeExecutionPriceQ18,
   computeMidPriceQ18FromPrice,
+  computeMidPriceQ18FromReserves,
   computePriceImpactBps,
   estimateAmountOutFromMidPrice,
   estimateGasForRoute,
+  getV2AmountOut,
   toRawAmount,
 } from './quote-math'
 import { selectBestQuote } from './route-planner'
@@ -39,8 +42,6 @@ interface V3PoolSnapshot {
   token1: Address
   fee: number
 }
-
-const sameAddress = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
 
 export class PoolDiscovery {
   constructor(
@@ -93,14 +94,10 @@ export class PoolDiscovery {
       contracts: factoryCalls,
     })
 
-    const poolDataCalls: any[] = []
-    const poolMap: {
-      type: 'v2' | 'v3'
-      dex: DexConfig
-      fee?: number
-      poolAddress: Address
-      startIndex: number
-    }[] = []
+    const poolsByType: {
+      v2Pools: { poolAddress: Address; dex: DexConfig }[]
+      v3Pools: { poolAddress: Address; dex: DexConfig; fee: number }[]
+    } = { v2Pools: [], v3Pools: [] }
 
     dexMap.forEach((item) => {
       const result = factoryResults[item.index]
@@ -109,34 +106,150 @@ export class PoolDiscovery {
       const poolAddress = result.result as Address
 
       if (item.type === 'v2') {
-        poolDataCalls.push(
-          { address: poolAddress, abi: V2_PAIR_ABI, functionName: 'getReserves' },
-          { address: poolAddress, abi: V2_PAIR_ABI, functionName: 'token0' },
-        )
-        poolMap.push({ ...item, poolAddress, startIndex: poolDataCalls.length - 2 })
+        poolsByType.v2Pools.push({ poolAddress, dex: item.dex })
       } else {
-        poolDataCalls.push(
-          { address: poolAddress, abi: V3_POOL_ABI, functionName: 'slot0' },
-          { address: poolAddress, abi: V3_POOL_ABI, functionName: 'liquidity' },
-          { address: poolAddress, abi: V3_POOL_ABI, functionName: 'token0' },
-          { address: poolAddress, abi: V3_POOL_ABI, functionName: 'token1' },
-        )
-        poolMap.push({ ...item, poolAddress, startIndex: poolDataCalls.length - 4 })
+        poolsByType.v3Pools.push({ poolAddress, dex: item.dex, fee: item.fee! })
       }
     })
 
-    if (poolDataCalls.length === 0) return []
+    const lensAddress = AEQUI_LENS_ADDRESSES[chain.id]
+    let v2PoolData: Map<Address, { reserve0: bigint; reserve1: bigint; token0: Address; success: boolean }> = new Map()
+    let v3PoolData: Map<Address, { sqrtPriceX96: bigint; tick: number; liquidity: bigint; token0: Address; token1: Address; success: boolean }> = new Map()
 
-    const poolDataResults = await client.multicall({
-      allowFailure: true,
-      contracts: poolDataCalls,
-    })
+    console.log(`[PoolDiscovery] Chain ID: ${chain.id}, Lens address: ${lensAddress}, V2 pools: ${poolsByType.v2Pools.length}, V3 pools: ${poolsByType.v3Pools.length}`)
 
-    const quotes: PriceQuote[] = []
-    const v3Candidates: { dex: DexConfig; snapshot: V3PoolSnapshot }[] = []
+    if (lensAddress && poolsByType.v2Pools.length > 0) {
+      v2PoolData = new Map()
+      v3PoolData = new Map()
 
-    for (const item of poolMap) {
-      try {
+      if (poolsByType.v2Pools.length > 0) {
+        try {
+          const v2Addresses = poolsByType.v2Pools.map((p) => p.poolAddress)
+          console.log(`[PoolDiscovery] Using AequiLens batch for ${v2Addresses.length} V2 pools`)
+          const batchResult = await client.readContract({
+            address: lensAddress,
+            abi: AEQUI_LENS_ABI,
+            functionName: 'batchGetV2PoolData',
+            args: [v2Addresses],
+          })
+
+          batchResult.forEach((data: any, idx: number) => {
+            const poolAddr = v2Addresses[idx]!
+            v2PoolData.set(poolAddr, {
+              reserve0: data.reserve0,
+              reserve1: data.reserve1,
+              token0: data.token0,
+              success: data.exists,
+            })
+          })
+        } catch (error) {
+          console.warn(`[PoolDiscovery] AequiLens V2 batch failed, falling back to multicall:`, (error as Error).message)
+        }
+      }
+
+      // V3 batch temporarily disabled due to revert issues - will investigate
+      // if (poolsByType.v3Pools.length > 0) {
+      //   try {
+      //     const v3Addresses = poolsByType.v3Pools.map((p) => p.poolAddress)
+      //     console.log(`[PoolDiscovery] Using AequiLens batch for ${v3Addresses.length} V3 pools`)
+      //     const batchResult = await client.readContract({
+      //       address: lensAddress,
+      //       abi: AEQUI_LENS_ABI,
+      //       functionName: 'batchGetV3PoolData',
+      //       args: [v3Addresses],
+      //     })
+      //     ...
+      //   } catch (error) {
+      //     console.warn(`[PoolDiscovery] AequiLens V3 batch failed, falling back to multicall:`, (error as Error).message)
+      //   }
+      // }
+
+      // Fallback to multicall for V3 pools
+      if (poolsByType.v3Pools.length > 0) {
+        console.log(`[PoolDiscovery] Using multicall for V3 pools (batch disabled)`)
+        const poolDataCalls: any[] = []
+        const poolMap: { poolAddress: Address; dex: DexConfig; fee: number; startIndex: number }[] = []
+
+        poolsByType.v3Pools.forEach((item) => {
+          poolDataCalls.push(
+            { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'slot0' },
+            { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'liquidity' },
+            { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'token0' },
+            { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'token1' },
+          )
+          poolMap.push({ poolAddress: item.poolAddress, dex: item.dex, fee: item.fee, startIndex: poolDataCalls.length - 4 })
+        })
+
+        const poolDataResults = await client.multicall({
+          allowFailure: true,
+          contracts: poolDataCalls,
+        })
+
+        poolMap.forEach((item) => {
+          const slotRes = poolDataResults[item.startIndex]
+          const liquidityRes = poolDataResults[item.startIndex + 1]
+          const token0Res = poolDataResults[item.startIndex + 2]
+          const token1Res = poolDataResults[item.startIndex + 3]
+
+          if (slotRes && liquidityRes && token0Res && token1Res && 
+              slotRes.status === 'success' && liquidityRes.status === 'success' &&
+              token0Res.status === 'success' && token1Res.status === 'success') {
+            const slotData = slotRes.result as readonly [bigint, number, number, number, number, number, boolean]
+            const liquidityValue = liquidityRes.result as bigint
+            const token0Address = normalizeAddress(token0Res.result as Address)
+            const token1Address = normalizeAddress(token1Res.result as Address)
+
+            v3PoolData.set(item.poolAddress, {
+              sqrtPriceX96: slotData[0],
+              tick: Number(slotData[1]),
+              liquidity: liquidityValue,
+              token0: token0Address,
+              token1: token1Address,
+              success: true,
+            })
+          }
+        })
+      }
+    } else if (!lensAddress && (poolsByType.v2Pools.length > 0 || poolsByType.v3Pools.length > 0)) {
+      console.log(`[PoolDiscovery] Falling back to multicall (lens address not found)`)
+      const poolDataCalls: any[] = []
+      const poolMap: {
+        type: 'v2' | 'v3'
+        dex: DexConfig
+        fee?: number
+        poolAddress: Address
+        startIndex: number
+      }[] = []
+
+      poolsByType.v2Pools.forEach((item) => {
+        poolDataCalls.push(
+          { address: item.poolAddress, abi: V2_PAIR_ABI, functionName: 'getReserves' },
+          { address: item.poolAddress, abi: V2_PAIR_ABI, functionName: 'token0' },
+        )
+        poolMap.push({ type: 'v2', dex: item.dex, poolAddress: item.poolAddress, startIndex: poolDataCalls.length - 2 })
+      })
+
+      poolsByType.v3Pools.forEach((item) => {
+        poolDataCalls.push(
+          { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'slot0' },
+          { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'liquidity' },
+          { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'token0' },
+          { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'token1' },
+        )
+        poolMap.push({ type: 'v3', dex: item.dex, fee: item.fee, poolAddress: item.poolAddress, startIndex: poolDataCalls.length - 4 })
+      })
+
+      if (poolDataCalls.length === 0) return []
+
+      const poolDataResults = await client.multicall({
+        allowFailure: true,
+        contracts: poolDataCalls,
+      })
+
+      v2PoolData = new Map()
+      v3PoolData = new Map()
+
+      poolMap.forEach((item) => {
         if (item.type === 'v2') {
           const reservesRes = poolDataResults[item.startIndex]
           const token0Res = poolDataResults[item.startIndex + 1]
@@ -144,84 +257,130 @@ export class PoolDiscovery {
           if (reservesRes && token0Res && reservesRes.status === 'success' && token0Res.status === 'success') {
             const [reserve0, reserve1] = reservesRes.result as readonly [bigint, bigint, number]
             const token0Address = normalizeAddress(token0Res.result as Address)
-
-            const reserveIn = sameAddress(token0Address, tokenIn.address)
-              ? (reserve0 as bigint)
-              : (reserve1 as bigint)
-            const reserveOut = sameAddress(token0Address, tokenIn.address)
-              ? (reserve1 as bigint)
-              : (reserve0 as bigint)
-
-            const token1Address = normalizeAddress(token0Address === tokenIn.address ? tokenOut.address : tokenIn.address) // Infer token1 if not fetched, but we fetched token0.
-            // Wait, for V2 we only fetched token0.
-            // If token0 == tokenIn, then token1 == tokenOut.
-            // If token0 != tokenIn, then token0 == tokenOut and token1 == tokenIn.
-            // Actually we know the pair is tokenIn/tokenOut.
-
-            const snapshot: V2ReserveSnapshot = {
-              pairAddress: item.poolAddress,
-              reserveIn,
-              reserveOut,
-              reserve0: reserve0 as bigint,
-              reserve1: reserve1 as bigint,
+            v2PoolData.set(item.poolAddress, {
+              reserve0,
+              reserve1,
               token0: token0Address,
-              token1: sameAddress(token0Address, tokenIn.address) ? tokenOut.address : tokenIn.address,
-            }
-
-            const quote = await this.computeV2Quote(
-              chain,
-              item.dex,
-              tokenIn,
-              tokenOut,
-              amountIn,
-              gasPriceWei,
-              snapshot,
-            )
-            if (quote) quotes.push(quote)
+              success: true,
+            })
           }
         } else {
-          const slot0Res = poolDataResults[item.startIndex]
+          const slotRes = poolDataResults[item.startIndex]
           const liquidityRes = poolDataResults[item.startIndex + 1]
           const token0Res = poolDataResults[item.startIndex + 2]
           const token1Res = poolDataResults[item.startIndex + 3]
 
-          if (
-            slot0Res && liquidityRes && token0Res && token1Res &&
-            slot0Res.status === 'success' &&
-            liquidityRes.status === 'success' &&
-            token0Res.status === 'success' &&
-            token1Res.status === 'success'
-          ) {
-            const slotData = slot0Res.result as readonly [
-              bigint,
-              number,
-              number,
-              number,
-              number,
-              number,
-              boolean,
-            ]
+          if (slotRes && liquidityRes && token0Res && token1Res && 
+              slotRes.status === 'success' && liquidityRes.status === 'success' &&
+              token0Res.status === 'success' && token1Res.status === 'success') {
+            const slotData = slotRes.result as readonly [bigint, number, number, number, number, number, boolean]
             const liquidityValue = liquidityRes.result as bigint
             const token0Address = normalizeAddress(token0Res.result as Address)
             const token1Address = normalizeAddress(token1Res.result as Address)
 
-            const snapshot: V3PoolSnapshot = {
-              poolAddress: item.poolAddress,
+            v3PoolData.set(item.poolAddress, {
               sqrtPriceX96: slotData[0],
               tick: Number(slotData[1]),
               liquidity: liquidityValue,
               token0: token0Address,
               token1: token1Address,
-              fee: item.fee!,
-            }
-
-            if (snapshot.liquidity >= this.config.minV3LiquidityThreshold) {
-              v3Candidates.push({ dex: item.dex, snapshot })
-            }
+              success: true,
+            })
           }
         }
+      })
+    }
+
+    const quotes: PriceQuote[] = []
+    const v3Candidates: { dex: DexConfig; snapshot: V3PoolSnapshot }[] = []
+
+    for (const item of poolsByType.v2Pools) {
+      try {
+        const poolData = v2PoolData.get(item.poolAddress)
+        if (!poolData || !poolData.success) continue
+
+        const reserveIn = sameAddress(poolData.token0, tokenIn.address)
+          ? poolData.reserve0
+          : poolData.reserve1
+        const reserveOut = sameAddress(poolData.token0, tokenIn.address)
+          ? poolData.reserve1
+          : poolData.reserve0
+
+        if (reserveIn < this.config.minV2ReserveThreshold || reserveOut < this.config.minV2ReserveThreshold) {
+          continue
+        }
+
+        const amountOut = getV2AmountOut(amountIn, reserveIn, reserveOut)
+        if (amountOut === 0n) continue
+
+        const midPriceQ18 = computeMidPriceQ18FromReserves(
+          item.dex.protocol,
+          reserveIn,
+          reserveOut,
+          tokenIn.decimals,
+          tokenOut.decimals,
+        )
+        const executionPriceQ18 = computeExecutionPriceQ18(amountIn, amountOut, tokenIn.decimals, tokenOut.decimals)
+        const priceImpactBps = computePriceImpactBps(midPriceQ18, amountIn, amountOut, tokenIn.decimals, tokenOut.decimals)
+
+        const hopVersions: RouteHopVersion[] = ['v2']
+        const estimatedGasUnits = estimateGasForRoute(hopVersions)
+        const estimatedGasCostWei = gasPriceWei ? gasPriceWei * estimatedGasUnits : null
+
+        quotes.push({
+          chain: chain.key,
+          amountIn,
+          amountOut,
+          priceQ18: executionPriceQ18,
+          executionPriceQ18,
+          midPriceQ18,
+          priceImpactBps,
+          path: [tokenIn, tokenOut],
+          routeAddresses: [tokenIn.address, tokenOut.address],
+          sources: [
+            {
+              dexId: item.dex.id,
+              poolAddress: item.poolAddress,
+              amountIn,
+              amountOut,
+              reserves: {
+                reserve0: poolData.reserve0,
+                reserve1: poolData.reserve1,
+                token0: poolData.token0,
+                token1: sameAddress(poolData.token0, tokenIn.address) ? tokenOut.address : tokenIn.address,
+              },
+            },
+          ],
+          liquidityScore: reserveIn + reserveOut,
+          hopVersions,
+          estimatedGasUnits,
+          estimatedGasCostWei,
+          gasPriceWei,
+        })
       } catch (error) {
-        console.warn(`[PoolDiscovery] Error processing pool ${item.poolAddress} (${item.type}):`, (error as Error).message)
+        console.warn(`[PoolDiscovery] Error processing V2 pool ${item.poolAddress}:`, (error as Error).message)
+      }
+    }
+
+    for (const item of poolsByType.v3Pools) {
+      try {
+        const poolData = v3PoolData.get(item.poolAddress)
+        if (!poolData || !poolData.success) continue
+
+        if (poolData.liquidity >= this.config.minV3LiquidityThreshold) {
+          const snapshot: V3PoolSnapshot = {
+            poolAddress: item.poolAddress,
+            sqrtPriceX96: poolData.sqrtPriceX96,
+            tick: poolData.tick,
+            liquidity: poolData.liquidity,
+            token0: poolData.token0,
+            token1: poolData.token1,
+            fee: item.fee,
+          }
+          v3Candidates.push({ dex: item.dex, snapshot })
+        }
+      } catch (error) {
+        console.warn(`[PoolDiscovery] Error processing V3 pool ${item.poolAddress}:`, (error as Error).message)
       }
     }
 

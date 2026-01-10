@@ -2,8 +2,18 @@ import type { Address } from 'viem'
 
 export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const
 
+export const AEQUI_LENS_ADDRESSES: Record<number, Address> = {
+  // 1: '0x...', // Ethereum - Deploy later
+  // 56: '0x...', // BSC - Deploy later
+  56: "0x7850BcB4048BA8F3b48311C94552Ae06bBF5131f"
+  // Add deployed addresses after deployment
+}
+
 export const normalizeAddress = (address: Address): Address =>
   (`0x${address.toLowerCase().replace(/^0x/, '')}` as Address)
+
+export const sameAddress = (a: Address, b: Address): boolean =>
+  normalizeAddress(a) === normalizeAddress(b)
 
 export const V2_FACTORY_ABI = [
   {

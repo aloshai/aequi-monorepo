@@ -3,6 +3,37 @@ import { CurrencyAmount as UniCurrencyAmount, Token as UniToken } from '@uniswap
 import type { DexConfig, PriceQuote, RouteHopVersion } from '@aequi/core'
 import { Q18, multiplyQ18 } from './math'
 
+export const getV2AmountOut = (amountIn: bigint, reserveIn: bigint, reserveOut: bigint): bigint => {
+  if (amountIn === 0n || reserveIn === 0n || reserveOut === 0n) {
+    return 0n
+  }
+  const amountInWithFee = amountIn * 997n
+  const numerator = amountInWithFee * reserveOut
+  const denominator = reserveIn * 1000n + amountInWithFee
+  if (denominator === 0n) {
+    return 0n
+  }
+  return numerator / denominator
+}
+
+export const computeMidPriceQ18FromReserves = (
+  protocol: DexConfig['protocol'],
+  reserveIn: bigint,
+  reserveOut: bigint,
+  inDecimals: number,
+  outDecimals: number,
+): bigint => {
+  if (reserveIn === 0n || reserveOut === 0n) {
+    return 0n
+  }
+  const inFactor = pow10(inDecimals)
+  const outFactor = pow10(outDecimals)
+  if (inFactor === 0n || outFactor === 0n) {
+    return 0n
+  }
+  return (reserveOut * Q18 * inFactor) / (reserveIn * outFactor)
+}
+
 const pow10 = (value: number) => {
   if (value < 0) return 1n
   try {

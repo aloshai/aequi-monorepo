@@ -186,3 +186,91 @@ export const WETH_ABI = [
     outputs: [],
   },
 ] as const satisfies Abi
+
+export const AEQUI_LENS_ABI = [
+  {
+    type: 'function',
+    name: 'batchGetV2PoolData',
+    stateMutability: 'view',
+    inputs: [{ name: 'pairs', type: 'address[]' }],
+    outputs: [
+      {
+        name: '',
+        type: 'tuple[]',
+        components: [
+          { name: 'pairAddress', type: 'address' },
+          { name: 'token0', type: 'address' },
+          { name: 'token1', type: 'address' },
+          { name: 'reserve0', type: 'uint112' },
+          { name: 'reserve1', type: 'uint112' },
+          { name: 'blockTimestampLast', type: 'uint32' },
+          { name: 'exists', type: 'bool' },
+        ],
+      },
+    ],
+  },
+  {
+    type: 'function',
+    name: 'batchGetV3PoolData',
+    stateMutability: 'view',
+    inputs: [{ name: 'pools', type: 'address[]' }],
+    outputs: [
+      {
+        name: '',
+        type: 'tuple[]',
+        components: [
+          { name: 'poolAddress', type: 'address' },
+          { name: 'token0', type: 'address' },
+          { name: 'token1', type: 'address' },
+          { name: 'fee', type: 'uint24' },
+          { name: 'sqrtPriceX96', type: 'uint160' },
+          { name: 'tick', type: 'int24' },
+          { name: 'liquidity', type: 'uint128' },
+          { name: 'exists', type: 'bool' },
+        ],
+      },
+    ],
+  },
+  {
+    type: 'function',
+    name: 'batchGetTokenMetadata',
+    stateMutability: 'view',
+    inputs: [{ name: 'tokens', type: 'address[]' }],
+    outputs: [
+      {
+        name: '',
+        type: 'tuple[]',
+        components: [
+          { name: 'tokenAddress', type: 'address' },
+          { name: 'name', type: 'string' },
+          { name: 'symbol', type: 'string' },
+          { name: 'decimals', type: 'uint8' },
+          { name: 'totalSupply', type: 'uint256' },
+          { name: 'exists', type: 'bool' },
+        ],
+      },
+    ],
+  },
+  {
+    type: 'function',
+    name: 'batchCheckTokenBalances',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'tokens', type: 'address[]' },
+      { name: 'account', type: 'address' },
+    ],
+    outputs: [{ name: '', type: 'uint256[]' }],
+  },
+  {
+    type: 'function',
+    name: 'batchCheckAllowances',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'tokens', type: 'address[]' },
+      { name: 'owner', type: 'address' },
+      { name: 'spender', type: 'address' },
+    ],
+    outputs: [{ name: '', type: 'uint256[]' }],
+  },
+] as const satisfies Abi
+
