@@ -7,7 +7,7 @@ import {
   ErrorCode,
   isAequiError,
   toAequiError,
-} from '../src/errors'
+} from '../errors'
 
 describe('AequiError', () => {
   it('should create error with correct properties', () => {

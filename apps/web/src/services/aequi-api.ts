@@ -34,6 +34,7 @@ export interface QuoteParams {
   amount: string
   slippageBps?: string
   version?: 'auto' | 'v2' | 'v3'
+  forceMultiHop?: 'true'
 }
 
 export interface AllowanceParams {
@@ -60,6 +61,7 @@ export interface SwapParams {
   version?: 'auto' | 'v2' | 'v3'
   recipient: string
   deadlineSeconds?: number
+  forceMultiHop?: boolean
 }
 
 export const fetchExchangeDirectory = async (params: ExchangeParams): Promise<ExchangeResponse> => {

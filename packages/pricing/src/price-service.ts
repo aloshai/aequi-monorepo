@@ -37,6 +37,7 @@ export class PriceService {
     tokenB: Address,
     amountIn?: bigint,
     preference: RoutePreference = 'auto',
+    forceMultiHop?: boolean,
   ): Promise<PriceQuote | null> {
     const [tokenIn, tokenOut] = await Promise.all([
       this.tokenService.getTokenMetadata(chain, tokenA),
@@ -47,7 +48,7 @@ export class PriceService {
       ? amountIn
       : defaultAmountForDecimals(tokenIn.decimals)
 
-    return this.getBestQuoteForTokens(chain, tokenIn, tokenOut, effectiveAmountIn, preference)
+    return this.getBestQuoteForTokens(chain, tokenIn, tokenOut, effectiveAmountIn, preference, forceMultiHop)
   }
 
   async getBestQuoteForTokens(
@@ -56,6 +57,7 @@ export class PriceService {
     tokenOut: TokenMetadata,
     amountIn: bigint,
     preference: RoutePreference = 'auto',
+    forceMultiHop?: boolean,
   ): Promise<PriceQuote | null> {
     if (amountIn <= 0n) {
       return null
@@ -72,11 +74,11 @@ export class PriceService {
     }
 
     const [directQuotes, multiHopQuotes] = await Promise.all([
-      this.poolDiscovery.fetchDirectQuotes(chain, tokenIn, tokenOut, amountIn, gasPriceWei, client, allowedVersions),
+      forceMultiHop ? Promise.resolve([]) : this.poolDiscovery.fetchDirectQuotes(chain, tokenIn, tokenOut, amountIn, gasPriceWei, client, allowedVersions),
       this.poolDiscovery.fetchMultiHopQuotes(chain, tokenIn, tokenOut, amountIn, gasPriceWei, client, allowedVersions),
     ])
 
-    const candidates = [...directQuotes, ...multiHopQuotes]
+    const candidates = forceMultiHop ? multiHopQuotes : [...directQuotes, ...multiHopQuotes]
     const best = selectBestQuote(candidates)
     if (!best) {
       return null
@@ -97,6 +99,7 @@ export class PriceService {
     amount: string,
     slippageBps: number,
     preference: RoutePreference = 'auto',
+    forceMultiHop: boolean = false,
     parseAmount: (value: string, decimals: number) => bigint,
   ): Promise<QuoteResult | null> {
     if (tokenInAddress.toLowerCase() === tokenOutAddress.toLowerCase()) {
@@ -113,7 +116,7 @@ export class PriceService {
       throw new Error('Amount must be greater than zero')
     }
 
-    const quote = await this.getBestQuoteForTokens(chain, tokenIn, tokenOut, amountIn, preference)
+    const quote = await this.getBestQuoteForTokens(chain, tokenIn, tokenOut, amountIn, preference, forceMultiHop)
     if (!quote) {
       return null
     }

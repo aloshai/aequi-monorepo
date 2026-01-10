@@ -15,6 +15,7 @@ export interface DexConfig {
   quoterAddress?: Address
   feeTiers?: number[]
   initCodeHash?: `0x${string}`
+  useRouter02?: boolean // For Uniswap V3 Router02 (different ABI without deadline in struct)
 }
 
 export interface ChainConfig {

@@ -33,6 +33,7 @@ export const CHAIN_CONFIGS: Record<ChainKey, ChainConfig> = {
                 routerAddress: '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45',
                 quoterAddress: '0x61fFE014bA17989E743c5F6cB21bF9697530B21e',
                 feeTiers: [FeeAmount.LOWEST, FeeAmount.LOW, FeeAmount.MEDIUM],
+                useRouter02: true, // Uniswap V3 uses Router02 (no deadline in struct)
             },
         ],
     },
@@ -70,6 +71,7 @@ export const CHAIN_CONFIGS: Record<ChainKey, ChainConfig> = {
                 routerAddress: '0x1b81D678ffb9C0263b24A97847620C99d213eB14',
                 quoterAddress: '0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997',
                 feeTiers: [PancakeFeeAmount.LOWEST, PancakeFeeAmount.LOW, PancakeFeeAmount.MEDIUM],
+                useRouter02: false, // PancakeSwap V3 uses standard router with deadline in struct
             },
             {
                 id: "uniswap-v2",
@@ -88,6 +90,7 @@ export const CHAIN_CONFIGS: Record<ChainKey, ChainConfig> = {
                 routerAddress: '0xB971eF87ede563556b2ED4b1C0b0019111Dd85d2',
                 quoterAddress: '0x78D78E420Da98ad378D7799bE8f4AF69033EB077',
                 feeTiers: [FeeAmount.LOWEST, FeeAmount.LOW, FeeAmount.MEDIUM],
+                useRouter02: true, // Uniswap V3 uses Router02 (no deadline in struct)
             },
         ],
     },

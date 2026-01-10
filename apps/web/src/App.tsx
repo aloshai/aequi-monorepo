@@ -173,6 +173,8 @@ function App() {
     deadlineSeconds: '600',
   })
 
+  const [forceMultiHop, setForceMultiHop] = useState(false)
+
   const [quoteResult, setQuoteResult] = useState<QuoteResponse | null>(null)
   const [quoteError, setQuoteError] = useState<string | null>(null)
   const [quoteLoading, setQuoteLoading] = useState(false)
@@ -278,6 +280,7 @@ function App() {
           amount,
           slippageBps: quoteForm.slippageBps.trim() || undefined,
           version: quoteForm.version,
+          forceMultiHop: forceMultiHop ? 'true' : undefined,
         }
         const data = await fetchSwapQuote(params)
         setQuoteResult(data)
@@ -300,7 +303,7 @@ function App() {
         setQuoteLoading(false)
       }
     },
-    [quoteForm, recordDebug, selectedChain],
+    [quoteForm, recordDebug, selectedChain, forceMultiHop],
   )
 
   // Debounce quote request
@@ -459,6 +462,7 @@ function App() {
         version: quoteForm.version,
         recipient: address,
         deadlineSeconds,
+        forceMultiHop,
       }
       const swapData = await requestSwapTransaction(payload)
       setPreparedSwap(swapData)
@@ -565,7 +569,7 @@ function App() {
       setApprovalLoading(null)
       setSwapExecutionLoading(false)
     }
-  }, [address, chainMismatch, quoteForm, quoteResult, recordDebug, refreshAllowance, selectedChain, selectedChainId, sendTransactionAsync, ensureAllowanceSynced, isConnected])
+  }, [address, chainMismatch, quoteForm, quoteResult, recordDebug, refreshAllowance, selectedChain, selectedChainId, sendTransactionAsync, ensureAllowanceSynced, isConnected, forceMultiHop])
 
   return (
     <div className="app">
@@ -731,6 +735,22 @@ function App() {
                       />
                     </div>
                   </div>
+                </div>
+
+                {/* Debug Options */}
+                <div className="debug-options" style={{ marginTop: '12px', padding: '12px', background: 'rgba(255,165,0,0.1)', borderRadius: '8px', border: '1px solid rgba(255,165,0,0.3)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: '#ff9500' }}>
+                    <input
+                      type="checkbox"
+                      checked={forceMultiHop}
+                      onChange={(e) => setForceMultiHop(e.target.checked)}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <span>🔧 Force Multi-Hop Routes (Debug)</span>
+                  </label>
+                  <p style={{ margin: '4px 0 0 24px', fontSize: '11px', color: 'rgba(255,165,0,0.7)' }}>
+                    Test multi-hop routing by skipping direct routes
+                  </p>
                 </div>
 
                 {walletError && (

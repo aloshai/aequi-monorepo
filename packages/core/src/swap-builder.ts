@@ -1,6 +1,6 @@
 import { encodeFunctionData } from 'viem'
 import type { Address, Hex } from 'viem'
-import { AEQUI_EXECUTOR_ABI, V2_ROUTER_ABI, V3_ROUTER_ABI, WETH_ABI } from './abi'
+import { AEQUI_EXECUTOR_ABI, V2_ROUTER_ABI, V3_ROUTER_ABI, V3_ROUTER02_ABI, WETH_ABI } from './abi'
 import type { ChainConfig, ChainKey, PriceQuote, TokenMetadata } from './types'
 
 interface ExecutorCallPlan {
@@ -239,7 +239,7 @@ export class SwapBuilder {
 
       const swapCallData = hopVersion === 'v2'
         ? this.encodeV2SingleHopCall(tokenIn.address, tokenOut.address, hopAmountIn, hopMinOut, hopRecipient, deadline)
-        : this.encodeV3SingleHopCall(tokenIn.address, tokenOut.address, source.feeTier, hopAmountIn, hopMinOut, hopRecipient, deadline)
+        : this.encodeV3SingleHopCall(tokenIn.address, tokenOut.address, source.feeTier, hopAmountIn, hopMinOut, hopRecipient, deadline, dex.useRouter02)
 
       // Dynamic Injection for multi-hop
       // For the first hop (index 0), we use the fixed amountIn.
@@ -252,8 +252,13 @@ export class SwapBuilder {
         if (hopVersion === 'v2') {
           // swapExactTokensForTokens(amountIn, ...) -> amountIn is at offset 4
           injectOffset = 4n
+        } else if (dex.useRouter02) {
+          // Router02: exactInputSingle(params) -> params.amountIn is at offset 4 + (4 * 32) = 132
+          // (tokenIn, tokenOut, fee, recipient, amountIn, amountOutMinimum, sqrtPriceLimitX96)
+          injectOffset = 132n
         } else {
-          // exactInputSingle(params) -> params.amountIn is at offset 4 + (5 * 32) = 164
+          // Standard V3: exactInputSingle(params) -> params.amountIn is at offset 4 + (5 * 32) = 164
+          // (tokenIn, tokenOut, fee, recipient, deadline, amountIn, amountOutMinimum, sqrtPriceLimitX96)
           injectOffset = 164n
         }
       }
@@ -449,11 +454,32 @@ export class SwapBuilder {
     amountOutMin: bigint,
     recipient: Address,
     deadline: bigint,
+    useRouter02?: boolean,
   ): Hex {
     if (typeof feeTier !== 'number') {
       throw new Error('Missing fee tier for V3 hop')
     }
 
+    // Router02 (Uniswap V3) uses different ABI without deadline in struct
+    if (useRouter02) {
+      return encodeFunctionData({
+        abi: V3_ROUTER02_ABI,
+        functionName: 'exactInputSingle',
+        args: [
+          {
+            tokenIn,
+            tokenOut,
+            fee: feeTier,
+            recipient,
+            amountIn,
+            amountOutMinimum: amountOutMin,
+            sqrtPriceLimitX96: 0n,
+          },
+        ],
+      })
+    }
+
+    // Standard V3 Router (PancakeSwap) includes deadline in struct
     return encodeFunctionData({
       abi: V3_ROUTER_ABI,
       functionName: 'exactInputSingle',

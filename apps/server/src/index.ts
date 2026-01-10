@@ -329,6 +329,7 @@ export const buildServer = async () => {
             tokenB: z.string().refine((value) => isAddress(value, { strict: false }) || value.toLowerCase() === NATIVE_ADDRESS.toLowerCase(), 'Invalid tokenB address'),
             amount: z.string().optional(),
             version: z.enum(['auto', 'v2', 'v3']).optional(),
+            forceMultiHop: z.enum(['true', 'false']).optional(),
         })
 
         const parsed = querySchema.safeParse(request.query)
@@ -394,9 +395,10 @@ export const buildServer = async () => {
                 tokenOutMeta,
                 amountIn,
                 routePreference,
+                forceMultiHop,
             )
         } else {
-            quote = await priceService.getBestPrice(chain, effectiveTokenA, effectiveTokenB, undefined, routePreference)
+            quote = await priceService.getBestPrice(chain, effectiveTokenA, effectiveTokenB, undefined, routePreference, forceMultiHop)
             if (quote) {
                 tokenInMeta = quote.path[0]
                 tokenOutMeta = quote.path[quote.path.length - 1]
@@ -418,6 +420,7 @@ export const buildServer = async () => {
             amount: z.string().min(1, 'Amount is required'),
             slippageBps: z.string().optional(),
             version: z.enum(['auto', 'v2', 'v3']).optional(),
+            forceMultiHop: z.enum(['true', 'false']).optional(),
         })
 
         const parsed = querySchema.safeParse(request.query)
@@ -437,6 +440,7 @@ export const buildServer = async () => {
         const tokenA = normalizeAddress(parsed.data.tokenA).toLowerCase() as Address
         const tokenB = normalizeAddress(parsed.data.tokenB).toLowerCase() as Address
         const routePreference = resolveRoutePreference(parsed.data.version)
+        const forceMultiHop = parsed.data.forceMultiHop === 'true'
 
         if (tokenA === tokenB) {
             reply.status(400)
@@ -467,6 +471,7 @@ export const buildServer = async () => {
                 parsed.data.amount,
                 slippage,
                 routePreference,
+                forceMultiHop,
             )
         } catch (error) {
             reply.status(400)
@@ -509,6 +514,7 @@ export const buildServer = async () => {
             version: z.enum(['auto', 'v2', 'v3']).optional(),
             recipient: z.string().refine((value) => isAddress(value, { strict: false }), 'Invalid recipient address'),
             deadlineSeconds: z.coerce.number().optional(),
+            forceMultiHop: z.boolean().optional(),
         })
 
         const parsed = bodySchema.safeParse(request.body)
@@ -547,12 +553,13 @@ export const buildServer = async () => {
         const slippageInput = Number.isFinite(parsed.data.slippageBps) ? parsed.data.slippageBps! : undefined
         const slippageBps = slippageInput ?? 50
         const deadlineSeconds = Number.isFinite(parsed.data.deadlineSeconds) ? parsed.data.deadlineSeconds! : 180
+        const forceMultiHop = parsed.data.forceMultiHop ?? false
 
         console.log(`[API] Swap request: ${effectiveTokenA} -> ${effectiveTokenB}, Amount: ${parsed.data.amount}`)
 
         let quoteResult: QuoteResult | null = null
         try {
-            quoteResult = await quoteService.getQuote(chain, effectiveTokenA, effectiveTokenB, parsed.data.amount, slippageBps, routePreference)
+            quoteResult = await quoteService.getQuote(chain, effectiveTokenA, effectiveTokenB, parsed.data.amount, slippageBps, routePreference, forceMultiHop)
         } catch (error) {
             reply.status(400)
             return { error: 'invalid_request', message: (error as Error).message }
