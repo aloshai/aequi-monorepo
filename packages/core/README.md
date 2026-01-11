@@ -5,10 +5,11 @@ Shared types, ABIs, and swap construction utilities used by the Aequi server and
 ## Contents
 - Chain and DEX types (`ChainConfig`, `DexConfig`, `ChainKey`, `RoutePreference`, etc.)
 - Token and quote shapes (`TokenMetadata`, `PriceQuote`, `QuoteResult`)
-- ABIs for AequiExecutor and Uniswap/Pancake V2/V3 routers (`src/abi.ts`)
-- `SwapBuilder` to turn priced routes into transaction calldata
+- ABIs for AequiExecutor, AequiLens, and Uniswap/Pancake V2/V3 routers (`src/abi.ts`)
+- `SwapBuilder` to turn priced routes into AequiExecutor transaction calldata
 - Custom error hierarchy for structured error handling
 - Structured logging utilities
+- AequiLens addresses for batch pool data queries
 
 ## SwapBuilder
 

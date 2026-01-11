@@ -5,9 +5,12 @@
 React/Vite frontend for the Aequi DEX aggregator. Talks to the Fastify API to fetch prices/quotes and builds swaps, with Wagmi for wallet connectivity.
 
 ## Features
-- Swap flow that requests `/price`, `/quote`, and `/swap` from the server.
-- Token search/import backed by the server `/token` endpoint with local persistence.
-- Wallet wiring via Wagmi + `viem` on mainnet/BSC.
+- Swap flow with confirmation modal showing route details and gas estimates
+- Token search/import with server `/token` endpoint and local persistence
+- Real-time wallet balance display for selected tokens
+- Route analysis with multi-hop visualization and comparison table
+- Settings for slippage and deadline configuration
+- Wagmi + `viem` for Ethereum and BSC
 
 ## Stack
 - React 19, Vite 7, TypeScript.

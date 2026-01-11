@@ -2,7 +2,9 @@
 
 Smart contracts for the Aequi protocol.
 
-## AequiExecutor
+## Contracts
+
+### AequiExecutor
 
 Stateless multicall executor for atomic multi-hop swap sequences.
 
@@ -46,6 +48,34 @@ function execute(
 ### Admin Functions
 - `pause()` / `unpause()`: emergency controls
 - `rescueFunds()` / `rescueETH()`: recover stuck assets
+
+### AequiLens
+
+Batch data query contract for efficient pool discovery.
+
+**Functionality**:
+
+```solidity
+function batchGetV2PoolData(address[] pools) 
+    returns (V2PoolData[] memory)
+
+function batchGetV3PoolData(address[] pools)
+    returns (V3PoolData[] memory)
+```
+
+**Features**:
+- Batch queries for V2 pool reserves and token addresses
+- Batch queries for V3 pool slot0, liquidity, and token addresses
+- Graceful handling of invalid/non-existent pools
+- Gas-efficient: Single call for multiple pools
+
+**Usage**:
+Integrated into `@aequi/pricing` PoolDiscovery for optimized pool data fetching. Falls back to standard multicall if not deployed.
+
+**Deployment**:
+```bash
+npx hardhat ignition deploy ignition/modules/AequiLens.js --network <network_name>
+```
 
 ## Tech Stack
 

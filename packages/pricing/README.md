@@ -5,14 +5,10 @@ Pricing, routing, and pool discovery utilities used by the Aequi server.
 ## Components
 
 ### TokenService
-Fetches and caches ERC20 metadata (symbol, name, decimals, totalSupply) via viem multicall. Supports preload lists for intermediate tokens.
+Fetches and caches ERC20 metadata (symbol, name, decimals, totalSupply) via viem multicall. Supports batch fetching with `getBatchTokenMetadata()` and preload lists for common tokens. 5-minute cache TTL.
 
 ### PoolDiscovery
-Discovers liquidity pools across Uniswap/Pancake V2+V3:
-- Queries factory contracts for direct token pairs
-- Filters by minimum liquidity thresholds (configurable per V2/V3)
-- Constructs multi-hop routes through intermediate tokens (max 3 hops)
-- Returns pool metadata: address, reserves/liquidity, fee tier
+Discovers liquidity pools across Uniswap/Pancake V2+V3. Uses AequiLens for batch pool data queries (reserves, slot0, liquidity) with multicall fallback. Supports parallel multi-hop route discovery through intermediate tokens (max 3 hops). Filters by configurable liquidity thresholds.
 
 ### PriceService
 Orchestrates route planning and quote generation:
@@ -51,6 +47,10 @@ Orchestrates route planning and quote generation:
 ## Usage
 ```ts
 import { PriceService, PoolDiscovery, TokenService } from '@aequi/pricing'
+import { registerDefaultAdapters } from '@aequi/dex-adapters'
+
+// Register DEX adapters first
+registerDefaultAdapters()
 
 const tokenService = new TokenService(clientProvider, { preloadTokens })
 const poolDiscovery = new PoolDiscovery(tokenService, clientProvider, {
@@ -72,5 +72,8 @@ const quote = await pricing.getBestQuoteForTokens(
 ## Notes
 - All token amounts and prices use `bigint`
 - Price values use Q18 fixed-point (1.0 = 10^18)
-- Pool discovery uses multicall to reduce RPC round-trips
+- Pool discovery uses multicall and AequiLens for batch queries to reduce RPC round-trips
+- Multi-hop route discovery is parallelized for performance
+- Token metadata is batch-fetched and cached
 - Provide multiple RPC URLs for resilience
+- DEX adapters must be registered before use (see `@aequi/dex-adapters`)

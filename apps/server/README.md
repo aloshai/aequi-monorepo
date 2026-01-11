@@ -3,16 +3,14 @@
 Fastify API that discovers liquidity pools, prices routes, and builds transaction calldata for DEX swaps on Ethereum and BSC.
 
 ## What it does
-- Discovers Uniswap/Pancake V2+V3 pools and scores routes via `@aequi/pricing`
+- Discovers Uniswap/Pancake V2+V3 pools (Ethereum + BSC) via multicall and AequiLens batch queries
+- Scores routes using liquidity, gas costs, and price impact via `@aequi/pricing`
 - Returns spot prices (`/price`) and executable quotes with slippage bounds (`/quote`)
-- Builds calldata for swaps (`/swap`) using `@aequi/core` `SwapBuilder`
+- Builds calldata for swaps (`/swap`) using `@aequi/core` `SwapBuilder` with inter-hop buffering and per-hop approvals
 - Provides gas estimates through RPC simulation (20% buffer applied)
 - Supports native tokens (BNB/ETH) with automatic wrap/unwrap
 - Token metadata (`/token`), DEX listings (`/exchange`), allowance batching (`/allowance`), approval calldata (`/approve`)
-- Discovers Uniswap/Pancake V2+V3 pools (Ethereum + BSC) and scores routes via `@aequi/pricing`.
-- Returns spot prices (`/price`) and executable quotes with slippage bounds (`/quote`).
-- Builds calldata for swaps (`/swap`) using `@aequi/core` `SwapBuilder` with inter-hop buffering and per-hop approvals.
-- Provides token metadata (`/token`), DEX listings (`/exchange`), allowance batching (`/allowance`), and approval calldata (`/approve`).
+- Uses dex-adapter registry for extensible DEX support
 
 ## Stack
 - Fastify + Zod for request validation.

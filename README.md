@@ -25,10 +25,11 @@ Direct pool integration is planned to reduce gas costs by 25-30% through pool-le
 
 ## Packages
 - **apps/server** – Fastify API that discovers pools, prices routes, returns quotes, and builds calldata using `@aequi/core` and `@aequi/pricing`.
-- **apps/web** – React/Vite frontend that consumes the server API and Wagmi for wallet connectivity.
-- **packages/core** – Shared types, ABIs, and the `SwapBuilder` that outputs direct router calls or AequiExecutor multicall payloads.
-- **packages/pricing** – Route planning, pool discovery, and quote math across Uniswap/Pancake V2+V3.
-- **packages/contracts** – Hardhat project containing the AequiExecutor contract and deployment module.
+- **apps/web** – React/Vite frontend with Wagmi for wallet connectivity, featuring swap confirmation modals, token balance display, and route analysis.
+- **packages/core** – Shared types, ABIs (including AequiLens for batch pool data fetching), and the `SwapBuilder` that outputs AequiExecutor multicall payloads.
+- **packages/pricing** – Route planning, pool discovery with multicall optimization, and quote math across Uniswap/Pancake V2+V3.
+- **packages/dex-adapters** – Default DEX adapter implementations (Uniswap V2/V3, PancakeSwap V2/V3) with extensible adapter registry.
+- **packages/contracts** – Hardhat project containing AequiExecutor and AequiLens contracts with deployment modules.
 
 ## Prerequisites
 - Node.js 18+ (Bun 1.2+ recommended).
