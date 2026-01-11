@@ -405,59 +405,83 @@ export class PoolDiscovery {
   ): Promise<PriceQuote[]> {
     console.log(`[PoolDiscovery] Fetching multi-hop quotes for ${tokenIn.symbol} -> ${tokenOut.symbol}`)
     const intermediateAddresses = this.config.intermediateTokenAddresses[chain.key] ?? []
-    const cache = new Map<string, TokenMetadata>()
+    
+    // Filter out input/output tokens
+    const validCandidates = intermediateAddresses.filter(
+      (candidate) => !sameAddress(candidate, tokenIn.address) && !sameAddress(candidate, tokenOut.address)
+    )
+
+    if (validCandidates.length === 0) {
+      return []
+    }
+
+    // Batch fetch all intermediate token metadata
+    console.log(`[PoolDiscovery] Batch fetching ${validCandidates.length} intermediate token metadata`)
+    const intermediateTokens = await this.tokenService.getBatchTokenMetadata(
+      chain,
+      validCandidates as Address[]
+    )
+
+    // Fetch all legA quotes in parallel
+    console.log(`[PoolDiscovery] Fetching leg A quotes for ${intermediateTokens.length} intermediates`)
+    const legAQuotesArray = await Promise.all(
+      intermediateTokens.map((intermediate) =>
+        this.fetchDirectQuotes(chain, tokenIn, intermediate, amountIn, gasPriceWei, client, allowedVersions)
+      )
+    )
+
     const results: PriceQuote[] = []
 
-    for (const candidate of intermediateAddresses) {
-      if (sameAddress(candidate, tokenIn.address) || sameAddress(candidate, tokenOut.address)) {
-        continue
-      }
+    // Process each intermediate token
+    for (let i = 0; i < intermediateTokens.length; i++) {
+      const intermediate = intermediateTokens[i]!
+      const legAQuotes = legAQuotesArray[i]!
 
-      console.log(`[PoolDiscovery] Checking intermediate: ${candidate}`)
-      const intermediate = await this.loadIntermediate(chain, candidate, cache)
+      if (legAQuotes.length === 0) continue
 
-      // Fetch quotes for Leg A (tokenIn -> intermediate) from ALL DEXes
-      const legAQuotes = await this.fetchDirectQuotes(
-        chain,
-        tokenIn,
-        intermediate,
-        amountIn,
-        gasPriceWei,
-        client,
-        allowedVersions,
+      // Collect all unique amountOuts from legA for batch fetching legB
+      const uniqueAmounts = new Set<bigint>()
+      legAQuotes.forEach((legA) => {
+        if (legA && legA.amountOut > 0n) {
+          uniqueAmounts.add(legA.amountOut)
+        }
+      })
+
+      // For simplicity, use the first legA's amountOut or fetch multiple in parallel
+      // Here we'll fetch legB quotes for each legA in parallel
+      const legBQuotesArray = await Promise.all(
+        legAQuotes.map((legA) => {
+          if (!legA || legA.amountOut === 0n) {
+            return Promise.resolve([])
+          }
+          return this.fetchDirectQuotes(
+            chain,
+            intermediate,
+            tokenOut,
+            legA.amountOut,
+            gasPriceWei,
+            client,
+            allowedVersions
+          )
+        })
       )
 
-      // Try each legA quote as a starting point
-      for (const legA of legAQuotes) {
-        if (!legA || legA.amountOut === 0n) {
-          continue
-        }
+      // Combine legA and legB quotes
+      for (let j = 0; j < legAQuotes.length; j++) {
+        const legA = legAQuotes[j]
+        const legBQuotes = legBQuotesArray[j]
 
-        // Fetch quotes for Leg B (intermediate -> tokenOut) from ALL DEXes
-        const legBQuotes = await this.fetchDirectQuotes(
-          chain,
-          intermediate,
-          tokenOut,
-          legA.amountOut,
-          gasPriceWei,
-          client,
-          allowedVersions,
-        )
+        if (!legA || legA.amountOut === 0n || !legBQuotes) continue
 
-        // Combine each legA with each legB (cross-DEX routing)
         for (const legB of legBQuotes) {
-          if (!legB || legB.amountOut === 0n) {
-            continue
+          if (!legB || legB.amountOut === 0n) continue
+
+          const { mid, execution } = {
+            mid: multiplyQ18(legA.midPriceQ18, legB.midPriceQ18),
+            execution: multiplyQ18(legA.executionPriceQ18, legB.executionPriceQ18)
           }
 
-          const { mid, execution } = { 
-            mid: multiplyQ18(legA.midPriceQ18, legB.midPriceQ18), 
-            execution: multiplyQ18(legA.executionPriceQ18, legB.executionPriceQ18) 
-          }
-          
-          // Sum individual hop price impacts instead of recalculating from combined price
           const combinedPriceImpactBps = legA.priceImpactBps + legB.priceImpactBps
-          
           const hopVersions: RouteHopVersion[] = [...legA.hopVersions, ...legB.hopVersions]
           const estimatedGasUnits = estimateGasForRoute(hopVersions)
           const gasPrice = legA.gasPriceWei ?? legB.gasPriceWei ?? gasPriceWei
@@ -486,20 +510,5 @@ export class PoolDiscovery {
 
     console.log(`[PoolDiscovery] Found ${results.length} multi-hop quotes for ${tokenIn.symbol} -> ${tokenOut.symbol}`)
     return results
-  }
-
-  private async loadIntermediate(
-    chain: ChainConfig,
-    address: string,
-    cache: Map<string, TokenMetadata>,
-  ) {
-    const lower = address.toLowerCase()
-    const cached = cache.get(lower)
-    if (cached) {
-      return cached
-    }
-    const metadata = await this.tokenService.getTokenMetadata(chain, lower as Address)
-    cache.set(lower, metadata)
-    return metadata
   }
 }

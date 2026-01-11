@@ -137,4 +137,97 @@ export class TokenService {
 
     return metadata
   }
+
+  async getBatchTokenMetadata(chain: ChainConfig, addresses: Address[]): Promise<TokenMetadata[]> {
+    if (addresses.length === 0) return []
+
+    const results: (TokenMetadata | null)[] = new Array(addresses.length).fill(null)
+    const uncachedIndices: number[] = []
+    const uncachedAddresses: Address[] = []
+
+    for (let i = 0; i < addresses.length; i++) {
+      const address = addresses[i]!
+
+      if (address.toLowerCase() === NATIVE_ADDRESS.toLowerCase()) {
+        results[i] = {
+          chainId: chain.id,
+          address: NATIVE_ADDRESS as Address,
+          symbol: chain.nativeCurrencySymbol,
+          name: chain.nativeCurrencySymbol,
+          decimals: 18,
+          totalSupply: 0n,
+        }
+        continue
+      }
+
+      const normalized = getAddress(address)
+      const key = this.cacheKey(chain.id, normalized)
+      const cached = this.cache.get(key)
+
+      if (cached && cached.expiresAt > now()) {
+        results[i] = cached.value
+      } else {
+        uncachedIndices.push(i)
+        uncachedAddresses.push(normalized)
+      }
+    }
+
+    if (uncachedAddresses.length > 0) {
+      const client = await this.getClient(chain)
+
+      const multicallContracts: any[] = []
+      uncachedAddresses.forEach((addr) => {
+        multicallContracts.push(
+          { address: addr, abi: erc20Abi, functionName: 'symbol' },
+          { address: addr, abi: erc20Abi, functionName: 'name' },
+          { address: addr, abi: erc20Abi, functionName: 'decimals' },
+          { address: addr, abi: erc20Abi, functionName: 'totalSupply' }
+        )
+      })
+
+      const multicallResults = await client.multicall({
+        allowFailure: true,
+        contracts: multicallContracts,
+      })
+
+      for (let i = 0; i < uncachedAddresses.length; i++) {
+        const address = uncachedAddresses[i]!
+        const baseIndex = i * 4
+
+        const symbolResult = multicallResults[baseIndex]
+        const nameResult = multicallResults[baseIndex + 1]
+        const decimalsResult = multicallResults[baseIndex + 2]
+        const supplyResult = multicallResults[baseIndex + 3]
+
+        const symbol = decodeString(symbolResult?.result, 'UNKNOWN')
+        const name = decodeString(nameResult?.result, symbol)
+        const decimalsRaw = decimalsResult?.status === 'success' ? decimalsResult.result : null
+        const totalSupply = supplyResult?.status === 'success' ? (supplyResult.result as bigint) : null
+
+        if (decimalsRaw === null) {
+          throw new Error(`Failed to fetch decimals for token ${address} on chain ${chain.name}`)
+        }
+
+        const metadata: TokenMetadata = {
+          chainId: chain.id,
+          address,
+          symbol,
+          name,
+          decimals: Number(decimalsRaw),
+          totalSupply,
+        }
+
+        const key = this.cacheKey(chain.id, address)
+        this.cache.set(key, {
+          value: metadata,
+          expiresAt: now() + this.ttlMs,
+        })
+
+        const originalIndex = uncachedIndices[i]!
+        results[originalIndex] = metadata
+      }
+    }
+
+    return results.filter((r): r is TokenMetadata => r !== null)
+  }
 }
