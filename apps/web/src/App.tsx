@@ -51,10 +51,6 @@ const chainOptions: Array<{ key: ChainKey; label: string }> = [
   { key: 'bsc', label: 'BNB Smart Chain' },
 ]
 
-const tabs: Array<{ key: TabKey; label: string; subtitle: string }> = [
-  { key: 'swap', label: 'Swap', subtitle: 'Trade tokens' },
-]
-
 const CHAIN_ID_BY_KEY: Record<ChainKey, SupportedChainId> = {
   ethereum: CHAIN_BY_KEY.ethereum.id,
   bsc: CHAIN_BY_KEY.bsc.id,
@@ -64,7 +60,6 @@ const shorten = (value: string) => (value.length > 12 ? `${value.slice(0, 6)}…
 
 function App() {
   const [selectedChain, setSelectedChain] = useState<ChainKey>('bsc')
-  const [activeTab, setActiveTab] = useState<TabKey>('swap')
   const [debugEntries, setDebugEntries] = useState<Partial<Record<DebugKey, DebugEntry>>>({})
 
   // Token Management

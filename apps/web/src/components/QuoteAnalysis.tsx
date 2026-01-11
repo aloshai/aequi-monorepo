@@ -122,7 +122,7 @@ export function QuoteAnalysis({ quote, tokenA, tokenB }: QuoteAnalysisProps) {
             {quote.offers.slice(0, 5).map((offer, idx) => {
                const isBest = idx === 0;
                const offerAmount = Number(offer.amountOut) / 10 ** tokenB.decimals;
-               const bestAmount = Number(quote.offers[0].amountOut) / 10 ** tokenB.decimals;
+               const bestAmount = Number(quote.offers![0]!.amountOut) / 10 ** tokenB.decimals;
                const offerGas = offer.estimatedGasCostWei 
                  ? (Number(offer.estimatedGasCostWei) / 10 ** 18).toFixed(5) 
                  : '-';
@@ -143,7 +143,7 @@ export function QuoteAnalysis({ quote, tokenA, tokenB }: QuoteAnalysisProps) {
                    reason = `${outputDiff.toFixed(2)}% lower output`;
                  } else if (offerImpact > quote.priceImpactBps / 100) {
                    reason = 'Higher price impact';
-                 } else if (Number(offer.liquidityScore) < Number(quote.offers[0].liquidityScore)) {
+                 } else if (Number(offer.liquidityScore) < Number(quote.offers![0]!.liquidityScore)) {
                    reason = 'Lower liquidity';
                  } else {
                    reason = 'Higher gas cost';
