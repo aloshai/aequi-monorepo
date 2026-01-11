@@ -11,6 +11,7 @@ COPY package.json turbo.json ./
 COPY apps/server/package.json ./apps/server/
 COPY packages/core/package.json ./packages/core/
 COPY packages/pricing/package.json ./packages/pricing/
+COPY packages/dex-adapters/package.json ./packages/dex-adapters/
 
 # Install dependencies
 RUN bun install
@@ -27,11 +28,13 @@ COPY turbo.json ./
 COPY package.json ./
 COPY packages/core ./packages/core
 COPY packages/pricing ./packages/pricing
+COPY packages/dex-adapters ./packages/dex-adapters
 COPY apps/server ./apps/server
 
 # Build shared packages first
 RUN cd packages/core && bun run build
 RUN cd packages/pricing && bun run build
+RUN cd packages/dex-adapters && bun run build
 
 # Production stage
 FROM base AS runner
@@ -47,6 +50,8 @@ COPY --from=builder --chown=fastify:nodejs /app/packages/core/dist ./packages/co
 COPY --from=builder --chown=fastify:nodejs /app/packages/core/package.json ./packages/core/package.json
 COPY --from=builder --chown=fastify:nodejs /app/packages/pricing/dist ./packages/pricing/dist
 COPY --from=builder --chown=fastify:nodejs /app/packages/pricing/package.json ./packages/pricing/package.json
+COPY --from=builder --chown=fastify:nodejs /app/packages/dex-adapters/dist ./packages/dex-adapters/dist
+COPY --from=builder --chown=fastify:nodejs /app/packages/dex-adapters/package.json ./packages/dex-adapters/package.json
 COPY --from=builder --chown=fastify:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=fastify:nodejs /app/package.json ./package.json
 
