@@ -210,7 +210,7 @@ function App() {
   useEffect(() => {
     const presets = tokenDirectory[selectedChain] || []
     const chainId = CHAIN_ID_BY_KEY[selectedChain]
-    
+
     // Default pairs: BNB->USDT for BSC, ETH->USDC for Ethereum
     const symbolA = selectedChain === 'bsc' ? 'BNB' : 'ETH'
     const symbolB = selectedChain === 'bsc' ? 'USDT' : 'USDC'
@@ -251,8 +251,8 @@ function App() {
     chainId: selectedChainId,
   })
 
-  const isNativeTokenA = quoteForm.tokenA?.address === '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'
-  const isNativeTokenB = quoteForm.tokenB?.address === '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'
+  const isNativeTokenA = quoteForm.tokenA?.address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+  const isNativeTokenB = quoteForm.tokenB?.address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
 
   const { data: tokenABalance } = useReadContract({
     address: quoteForm.tokenA && !isNativeTokenA ? quoteForm.tokenA.address as `0x${string}` : undefined,
@@ -547,7 +547,7 @@ function App() {
       setPreparedSwap(swapData)
       recordDebug('swap', { request: payload, response: swapData })
       setPrepareLoading(false)
-      
+
       // Open modal with swap data
       setSwapConfirmModalOpen(true)
     } catch (error) {
@@ -626,11 +626,11 @@ function App() {
       if (!preparedSwap.transaction.call) {
         throw new Error('Missing transaction payload')
       }
-      
-      const gasLimit = preparedSwap.transaction.estimatedGas 
+
+      const gasLimit = preparedSwap.transaction.estimatedGas
         ? BigInt(preparedSwap.transaction.estimatedGas)
         : undefined
-      
+
       const swapTxHash = await sendTransactionAsync({
         chainId: selectedChainId,
         to: preparedSwap.transaction.call.to as `0x${string}`,
@@ -723,224 +723,224 @@ function App() {
 
       <div className="app-shell">
         <section className="swap-panel">
-              {/* LEFT PANEL - Token Selection & Input */}
-              <div className="swap-card">
-                <div className="panel-header">
-                  <span className="panel-title">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <polyline points="12 6 12 12 16 14"></polyline>
-                    </svg>
-                    Trade Terminal
-                  </span>
-                  <button className="settings-btn" title="Settings" onClick={() => setSettingsModalOpen(true)}>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="3"></circle>
-                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          {/* LEFT PANEL - Token Selection & Input */}
+          <div className="swap-card">
+            <div className="panel-header">
+              <span className="panel-title">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                Trade Terminal
+              </span>
+              <button className="settings-btn" title="Settings" onClick={() => setSettingsModalOpen(true)}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="3"></circle>
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+              </button>
+            </div>
+
+            <div className="token-stack">
+              <div className="token-row">
+                <div className="token-row-header">
+                  <span className="token-row-label">Sell</span>
+                  <div className="token-row-balance">
+                    {isConnected && quoteForm.tokenA && (
+                      <span className="balance-text">Balance: {formattedBalanceA} {quoteForm.tokenA.symbol}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="token-row-main">
+                  <button
+                    className="token-selector-btn"
+                    onClick={() => openTokenModal('A')}
+                  >
+                    {quoteForm.tokenA ? (
+                      <>
+                        {(quoteForm.tokenA.logoURI || getTokenLogo(quoteForm.tokenA.symbol)) && (
+                          <img src={quoteForm.tokenA.logoURI || getTokenLogo(quoteForm.tokenA.symbol)} alt={quoteForm.tokenA.symbol} className="token-icon" />
+                        )}
+                        {quoteForm.tokenA.symbol}
+                      </>
+                    ) : (
+                      <span>Select Token</span>
+                    )}
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M6 9l6 6 6-6" />
                     </svg>
                   </button>
+                  <input
+                    className="token-amount-input"
+                    placeholder="0"
+                    value={quoteForm.amount}
+                    onChange={(e) => setQuoteForm(prev => ({ ...prev, amount: e.target.value }))}
+                  />
                 </div>
-
-                <div className="token-stack">
-                  <div className="token-row">
-                    <div className="token-row-header">
-                      <span className="token-row-label">Sell</span>
-                      <div className="token-row-balance">
-                        {isConnected && quoteForm.tokenA && (
-                          <span className="balance-text">Balance: {formattedBalanceA} {quoteForm.tokenA.symbol}</span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="token-row-main">
-                      <button
-                        className="token-selector-btn"
-                        onClick={() => openTokenModal('A')}
-                      >
-                        {quoteForm.tokenA ? (
-                          <>
-                            {(quoteForm.tokenA.logoURI || getTokenLogo(quoteForm.tokenA.symbol)) && (
-                              <img src={quoteForm.tokenA.logoURI || getTokenLogo(quoteForm.tokenA.symbol)} alt={quoteForm.tokenA.symbol} className="token-icon" />
-                            )}
-                            {quoteForm.tokenA.symbol}
-                          </>
-                        ) : (
-                          <span>Select Token</span>
-                        )}
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M6 9l6 6 6-6" />
-                        </svg>
-                      </button>
-                      <input
-                        className="token-amount-input"
-                        placeholder="0"
-                        value={quoteForm.amount}
-                        onChange={(e) => setQuoteForm(prev => ({ ...prev, amount: e.target.value }))}
-                      />
-                    </div>
-                    <div className="token-row-actions">
-                      <button 
-                        className="quick-amount-btn"
-                        onClick={handleSetHalfAmount}
-                        disabled={!isConnected || !quoteForm.tokenA || balanceA === 0n}
-                      >
-                        Half
-                      </button>
-                      <button 
-                        className="quick-amount-btn"
-                        onClick={handleSetMaxAmount}
-                        disabled={!isConnected || !quoteForm.tokenA || balanceA === 0n}
-                      >
-                        Max
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="swap-toggle">
-                    <button className="swap-toggle-btn" onClick={onSwapTokens}>
-                      <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor">
-                        <path d="M9.75 13.5L12.5 10.75H10.5V5.75H9.5V10.75H7.5L10.25 13.5ZM5.25 12.25H7.25V7.25H8.25L5.5 4.5L2.75 7.25H3.75V12.25H5.75Z" />
-                      </svg>
-                    </button>
-                  </div>
-
-                  <div className="token-row">
-                    <div className="token-row-header">
-                      <span className="token-row-label">Buy</span>
-                      <div className="token-row-balance">
-                        {isConnected && quoteForm.tokenB && (
-                          <span className="balance-text">Balance: {formattedBalanceB} {quoteForm.tokenB.symbol}</span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="token-row-main">
-                      <button
-                        className="token-selector-btn"
-                        onClick={() => openTokenModal('B')}
-                      >
-                        {quoteForm.tokenB ? (
-                          <>
-                            {(quoteForm.tokenB.logoURI || getTokenLogo(quoteForm.tokenB.symbol)) && (
-                              <img src={quoteForm.tokenB.logoURI || getTokenLogo(quoteForm.tokenB.symbol)} alt={quoteForm.tokenB.symbol} className="token-icon" />
-                            )}
-                            {quoteForm.tokenB.symbol}
-                          </>
-                        ) : (
-                          <span>Select Token</span>
-                        )}
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M6 9l6 6 6-6" />
-                        </svg>
-                      </button>
-                      <input
-                        className="token-amount-input"
-                        placeholder="0"
-                        value={quoteResult ? (Number(quoteResult.amountOut) / 10 ** (quoteForm.tokenB?.decimals || 18)).toFixed(6) : ''}
-                        readOnly
-                      />
-                    </div>
-                  </div>
+                <div className="token-row-actions">
+                  <button
+                    className="quick-amount-btn"
+                    onClick={handleSetHalfAmount}
+                    disabled={!isConnected || !quoteForm.tokenA || balanceA === 0n}
+                  >
+                    Half
+                  </button>
+                  <button
+                    className="quick-amount-btn"
+                    onClick={handleSetMaxAmount}
+                    disabled={!isConnected || !quoteForm.tokenA || balanceA === 0n}
+                  >
+                    Max
+                  </button>
                 </div>
+              </div>
 
-                {/* Debug Options */}
-                <div className="debug-options" style={{ marginTop: '12px', padding: '12px', background: 'rgba(255,165,0,0.1)', borderRadius: '8px', border: '1px solid rgba(255,165,0,0.3)' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: '#ff9500' }}>
-                    <input
-                      type="checkbox"
-                      checked={forceMultiHop}
-                      onChange={(e) => setForceMultiHop(e.target.checked)}
-                      style={{ cursor: 'pointer' }}
-                    />
-                    <span>🔧 Force Multi-Hop Routes (Debug)</span>
-                  </label>
-                  <p style={{ margin: '4px 0 0 24px', fontSize: '11px', color: 'rgba(255,165,0,0.7)' }}>
-                    Test multi-hop routing by skipping direct routes
-                  </p>
-                </div>
-
-                {walletError && (
-                  <div className="error-message">
-                    {walletError}
-                  </div>
-                )}
-
-                {quoteError && (
-                  <div className="error-message">
-                    {quoteError}
-                  </div>
-                )}
-
-                {(prepareError || approvalError || swapExecutionError) && (
-                  <div className="error-message">
-                    {prepareError || approvalError || swapExecutionError}
-                  </div>
-                )}
-
-                {approvalHash && (
-                  <div className="info-message">
-                    Approving... <a href={`https://etherscan.io/tx/${approvalHash}`} target="_blank" rel="noreferrer">View on Explorer</a>
-                  </div>
-                )}
-
-                {swapHash && (
-                  <div className="info-message">
-                    Swapping... <a href={`https://etherscan.io/tx/${swapHash}`} target="_blank" rel="noreferrer">View on Explorer</a>
-                  </div>
-                )}
-
-                <button
-                  className="swap-action-btn"
-                  onClick={onExecuteSwapFlow}
-                  disabled={!quoteForm.tokenA || !quoteForm.tokenB || !quoteForm.amount || quoteLoading || prepareLoading || !!approvalLoading || swapExecutionLoading}
-                >
-                  {quoteLoading ? 'Fetching Quote...' :
-                    prepareLoading ? 'Preparing Swap...' :
-                      approvalLoading ? 'Approving...' :
-                        swapExecutionLoading ? 'Swapping...' :
-                          'Execute Swap'}
+              <div className="swap-toggle">
+                <button className="swap-toggle-btn" onClick={onSwapTokens}>
+                  <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor">
+                    <path d="M9.75 13.5L12.5 10.75H10.5V5.75H9.5V10.75H7.5L10.25 13.5ZM5.25 12.25H7.25V7.25H8.25L5.5 4.5L2.75 7.25H3.75V12.25H5.75Z" />
+                  </svg>
                 </button>
               </div>
 
-              {/* RIGHT PANEL - Quote Display & Details */}
-              <div className="terminal-panel">
-                <div className="panel-header">
-                  <span className="panel-title">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="12" y1="1" x2="12" y2="23"></line>
-                      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-                    </svg>
-                    Quote Analysis
-                  </span>
-                  {quoteResult && (
-                    <span className="route-badge">{quoteResult.routePreference}</span>
-                  )}
-                </div>
-
-                {quoteLoading ? (
-                  <div className="quote-loading">
-                    <div className="spinner"></div>
-                    <span>Fetching best rates...</span>
-                  </div>
-                ) : !quoteResult ? (
-                  <div className="quote-empty">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="12" y1="1" x2="12" y2="23"></line>
-                      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-                    </svg>
-                    <span>Enter amount to see quote</span>
-                  </div>
-                ) : (
-                  <div className="quote-display">
-                    {quoteResult && quoteForm.tokenA && quoteForm.tokenB && (
-                      <QuoteAnalysis
-                        quote={quoteResult}
-                        tokenA={quoteForm.tokenA}
-                        tokenB={quoteForm.tokenB}
-                      />
+              <div className="token-row">
+                <div className="token-row-header">
+                  <span className="token-row-label">Buy</span>
+                  <div className="token-row-balance">
+                    {isConnected && quoteForm.tokenB && (
+                      <span className="balance-text">Balance: {formattedBalanceB} {quoteForm.tokenB.symbol}</span>
                     )}
                   </div>
+                </div>
+                <div className="token-row-main">
+                  <button
+                    className="token-selector-btn"
+                    onClick={() => openTokenModal('B')}
+                  >
+                    {quoteForm.tokenB ? (
+                      <>
+                        {(quoteForm.tokenB.logoURI || getTokenLogo(quoteForm.tokenB.symbol)) && (
+                          <img src={quoteForm.tokenB.logoURI || getTokenLogo(quoteForm.tokenB.symbol)} alt={quoteForm.tokenB.symbol} className="token-icon" />
+                        )}
+                        {quoteForm.tokenB.symbol}
+                      </>
+                    ) : (
+                      <span>Select Token</span>
+                    )}
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
+                  </button>
+                  <input
+                    className="token-amount-input"
+                    placeholder="0"
+                    value={quoteResult ? (Number(quoteResult.amountOut) / 10 ** (quoteForm.tokenB?.decimals || 18)).toFixed(6) : ''}
+                    readOnly
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Debug Options */}
+            <div className="debug-options" style={{ marginTop: '12px', padding: '12px', background: 'rgba(255,165,0,0.1)', borderRadius: '8px', border: '1px solid rgba(255,165,0,0.3)' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: '#ff9500' }}>
+                <input
+                  type="checkbox"
+                  checked={forceMultiHop}
+                  onChange={(e) => setForceMultiHop(e.target.checked)}
+                  style={{ cursor: 'pointer' }}
+                />
+                <span>🔧 Force Multi-Hop Routes (Debug)</span>
+              </label>
+              <p style={{ margin: '4px 0 0 24px', fontSize: '11px', color: 'rgba(255,165,0,0.7)' }}>
+                Test multi-hop routing by skipping direct routes
+              </p>
+            </div>
+
+            {walletError && (
+              <div className="error-message">
+                {walletError}
+              </div>
+            )}
+
+            {quoteError && (
+              <div className="error-message">
+                {quoteError}
+              </div>
+            )}
+
+            {(prepareError || approvalError || swapExecutionError) && (
+              <div className="error-message">
+                {prepareError || approvalError || swapExecutionError}
+              </div>
+            )}
+
+            {approvalHash && (
+              <div className="info-message">
+                Approving... <a href={`https://etherscan.io/tx/${approvalHash}`} target="_blank" rel="noreferrer">View on Explorer</a>
+              </div>
+            )}
+
+            {swapHash && (
+              <div className="info-message">
+                Swapping... <a href={`https://etherscan.io/tx/${swapHash}`} target="_blank" rel="noreferrer">View on Explorer</a>
+              </div>
+            )}
+
+            <button
+              className="swap-action-btn"
+              onClick={onExecuteSwapFlow}
+              disabled={!quoteForm.tokenA || !quoteForm.tokenB || !quoteForm.amount || quoteLoading || prepareLoading || !!approvalLoading || swapExecutionLoading}
+            >
+              {quoteLoading ? 'Fetching Quote...' :
+                prepareLoading ? 'Preparing Swap...' :
+                  approvalLoading ? 'Approving...' :
+                    swapExecutionLoading ? 'Swapping...' :
+                      'Execute Swap'}
+            </button>
+          </div>
+
+          {/* RIGHT PANEL - Quote Display & Details */}
+          <div className="terminal-panel">
+            <div className="panel-header">
+              <span className="panel-title">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="1" x2="12" y2="23"></line>
+                  <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                </svg>
+                Quote Analysis
+              </span>
+              {quoteResult && (
+                <span className="route-badge">{quoteResult.routePreference}</span>
+              )}
+            </div>
+
+            {quoteLoading ? (
+              <div className="quote-loading">
+                <div className="spinner"></div>
+                <span>Fetching best rates...</span>
+              </div>
+            ) : !quoteResult ? (
+              <div className="quote-empty">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="1" x2="12" y2="23"></line>
+                  <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                </svg>
+                <span>Enter amount to see quote</span>
+              </div>
+            ) : (
+              <div className="quote-display">
+                {quoteResult && quoteForm.tokenA && quoteForm.tokenB && (
+                  <QuoteAnalysis
+                    quote={quoteResult}
+                    tokenA={quoteForm.tokenA}
+                    tokenB={quoteForm.tokenB}
+                  />
                 )}
               </div>
-            </section>
+            )}
+          </div>
+        </section>
       </div>
 
       <TokenModal
