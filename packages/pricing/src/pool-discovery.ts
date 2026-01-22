@@ -34,7 +34,7 @@ export class PoolDiscovery {
     private readonly tokenService: TokenService,
     private readonly clientProvider: ChainClientProvider,
     private readonly config: PoolDiscoveryConfig,
-  ) {}
+  ) { }
 
   async fetchDirectQuotes(
     chain: ChainConfig,
@@ -157,7 +157,7 @@ export class PoolDiscovery {
           })
         } catch (error) {
           console.warn(`[PoolDiscovery] AequiLens V3 batch failed, falling back to multicall:`, (error as Error).message)
-          
+
           // Fallback to multicall
           const poolDataCalls: any[] = []
           const poolMap: { poolAddress: Address; dex: DexConfig; fee: number; startIndex: number }[] = []
@@ -183,9 +183,9 @@ export class PoolDiscovery {
             const token0Res = poolDataResults[item.startIndex + 2]
             const token1Res = poolDataResults[item.startIndex + 3]
 
-            if (slotRes && liquidityRes && token0Res && token1Res && 
-                slotRes.status === 'success' && liquidityRes.status === 'success' &&
-                token0Res.status === 'success' && token1Res.status === 'success') {
+            if (slotRes && liquidityRes && token0Res && token1Res &&
+              slotRes.status === 'success' && liquidityRes.status === 'success' &&
+              token0Res.status === 'success' && token1Res.status === 'success') {
               const slotData = slotRes.result as readonly [bigint, number, number, number, number, number, boolean]
               const liquidityValue = liquidityRes.result as bigint
               const token0Address = normalizeAddress(token0Res.result as Address)
@@ -263,9 +263,9 @@ export class PoolDiscovery {
           const token0Res = poolDataResults[item.startIndex + 2]
           const token1Res = poolDataResults[item.startIndex + 3]
 
-          if (slotRes && liquidityRes && token0Res && token1Res && 
-              slotRes.status === 'success' && liquidityRes.status === 'success' &&
-              token0Res.status === 'success' && token1Res.status === 'success') {
+          if (slotRes && liquidityRes && token0Res && token1Res &&
+            slotRes.status === 'success' && liquidityRes.status === 'success' &&
+            token0Res.status === 'success' && token1Res.status === 'success') {
             const slotData = slotRes.result as readonly [bigint, number, number, number, number, number, boolean]
             const liquidityValue = liquidityRes.result as bigint
             const token0Address = normalizeAddress(token0Res.result as Address)
@@ -355,15 +355,15 @@ export class PoolDiscovery {
     }
 
     if (v3Candidates.length > 0) {
-      for (const candidate of v3Candidates) {
+      const quotePromises = v3Candidates.map(async (candidate) => {
         try {
           const adapter = dexRegistry.get(candidate.dex.protocol, 'v3')
           if (!adapter) {
             console.warn(`[PoolDiscovery] No adapter found for ${candidate.dex.protocol} V3`)
-            continue
+            return null
           }
 
-          const quote = await adapter.computeV3Quote!({
+          return await adapter.computeV3Quote!({
             chainId: chain.id,
             chainKey: chain.key,
             dex: candidate.dex,
@@ -380,14 +380,16 @@ export class PoolDiscovery {
             gasPriceWei,
             client,
           })
-
-          if (quote) {
-            quotes.push(quote)
-          }
         } catch (error) {
           console.warn(`[PoolDiscovery] Error processing V3 pool ${candidate.snapshot.poolAddress}:`, (error as Error).message)
+          return null
         }
-      }
+      })
+
+      const v3Quotes = await Promise.all(quotePromises)
+      v3Quotes.forEach(quote => {
+        if (quote) quotes.push(quote)
+      })
     }
 
     console.log(`[PoolDiscovery] Found ${quotes.length} direct quotes for ${tokenIn.symbol} -> ${tokenOut.symbol}`)
@@ -405,7 +407,7 @@ export class PoolDiscovery {
   ): Promise<PriceQuote[]> {
     console.log(`[PoolDiscovery] Fetching multi-hop quotes for ${tokenIn.symbol} -> ${tokenOut.symbol}`)
     const intermediateAddresses = this.config.intermediateTokenAddresses[chain.key] ?? []
-    
+
     // Filter out input/output tokens
     const validCandidates = intermediateAddresses.filter(
       (candidate) => !sameAddress(candidate, tokenIn.address) && !sameAddress(candidate, tokenOut.address)
