@@ -1,10 +1,10 @@
 import { createConfig, http } from 'wagmi'
 import { bsc, mainnet } from 'wagmi/chains'
-import { injected } from 'wagmi/connectors'
+import { injected, metaMask } from 'wagmi/connectors'
 
 export const wagmiConfig = createConfig({
   chains: [mainnet, bsc],
-  connectors: [injected({ shimDisconnect: true })],
+  connectors: [metaMask(), injected({ shimDisconnect: true })],
   transports: {
     [mainnet.id]: http(),
     [bsc.id]: http(),
