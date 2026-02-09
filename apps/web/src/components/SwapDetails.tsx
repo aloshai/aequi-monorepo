@@ -2,6 +2,11 @@ import { useState } from 'react'
 import type { QuoteResponse } from '../types/api'
 import type { Token } from '../services/token-manager'
 
+const NATIVE_SYMBOL: Record<string, string> = {
+    ethereum: 'ETH',
+    bsc: 'BNB',
+}
+
 interface SwapDetailsProps {
     quote: QuoteResponse
     tokenA: Token
@@ -10,6 +15,7 @@ interface SwapDetailsProps {
 }
 
 export function SwapDetails({ quote, tokenA, tokenB, amountIn }: SwapDetailsProps) {
+    const nativeCurrency = NATIVE_SYMBOL[quote.chain] ?? 'ETH'
     const [inverted, setInverted] = useState(false)
     const [expanded, setExpanded] = useState(false)
 
@@ -69,7 +75,7 @@ export function SwapDetails({ quote, tokenA, tokenB, amountIn }: SwapDetailsProp
                             <line x1="3" y1="6" x2="21" y2="6"></line>
                             <path d="M16 10a4 4 0 0 1-8 0"></path>
                         </svg>
-                        <span>~{gasCost} ETH</span>
+                        <span>~{gasCost} {nativeCurrency}</span>
                     </div>
                 </div>
                 <div className="detail-row">

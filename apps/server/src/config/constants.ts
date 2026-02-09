@@ -7,8 +7,8 @@ export { Q18 }
 
 export const DEFAULT_TOKEN_CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
 
-export const MIN_V2_RESERVE_THRESHOLD = 0n // ~1e-6 scaled reserve threshold to filter dust pairs
-export const MIN_V3_LIQUIDITY_THRESHOLD = 0n // Skip ultra-low liquidity pools
+export const MIN_V2_RESERVE_THRESHOLD = 10n ** 15n // Filter dust pairs with near-zero reserves
+export const MIN_V3_LIQUIDITY_THRESHOLD = 1000n // Skip ultra-low liquidity V3 pools
 
 export const NATIVE_ADDRESS = '0xEeeeeEeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
 

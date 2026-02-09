@@ -1,4 +1,6 @@
 import type { Token } from './token-manager'
+import { fetchTokenMetadata } from './aequi-api'
+import type { ChainKey } from '../types/api'
 
 const BASE_URL = 'https://api.dexscreener.com/latest/dex'
 
@@ -62,14 +64,24 @@ export async function searchTokens(query: string): Promise<Token[]> {
 
         if (data.pairs) {
             for (const pair of data.pairs) {
-                // Add base token
                 if (!tokensMap.has(pair.baseToken.address.toLowerCase())) {
+                    const chain: ChainKey = pair.chainId === 'bsc' ? 'bsc' : 'ethereum'
+                    const chainId = pair.chainId === 'bsc' ? 56 : 1
+
+                    let decimals = 18
+                    try {
+                        const meta = await fetchTokenMetadata({ chain, address: pair.baseToken.address })
+                        decimals = meta.token.decimals
+                    } catch {
+                        // fallback to 18 if server is unavailable
+                    }
+
                     tokensMap.set(pair.baseToken.address.toLowerCase(), {
                         address: pair.baseToken.address,
                         symbol: pair.baseToken.symbol,
                         name: pair.baseToken.name,
-                        decimals: 18, // DexScreener doesn't always provide decimals, defaulting to 18
-                        chainId: pair.chainId === 'bsc' ? 56 : 1, // Simple mapping for now
+                        decimals,
+                        chainId,
                         logoURI: `https://dd.dexscreener.com/ds-data/tokens/${pair.chainId}/${pair.baseToken.address}.png`,
                         isImported: true
                     })

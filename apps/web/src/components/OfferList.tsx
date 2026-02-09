@@ -2,6 +2,11 @@ import type { PriceResponse } from '../types/api'
 import type { Token } from '../services/token-manager'
 import { getDexLogo, getTokenLogo } from '../utils/logos'
 
+const NATIVE_SYMBOL: Record<string, string> = {
+    ethereum: 'ETH',
+    bsc: 'BNB',
+}
+
 interface OfferListProps {
     offers: PriceResponse[]
     tokenB: Token
@@ -49,7 +54,7 @@ export function OfferList({ offers, tokenB, onSelect }: OfferListProps) {
                                     {amountOut.toFixed(6)} {tokenB.symbol}
                                 </div>
                                 <div className="offer-gas">
-                                    Gas: ~{gasCost} ETH
+                                    Gas: ~{gasCost} {NATIVE_SYMBOL[offer.chain] ?? 'ETH'}
                                 </div>
                             </div>
                         </div>

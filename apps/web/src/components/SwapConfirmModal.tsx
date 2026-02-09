@@ -133,7 +133,7 @@ export function SwapConfirmModal({
             <div className="swap-detail-row">
               <span className="swap-detail-label">Rate</span>
               <span className="swap-detail-value">
-                1 {tokenIn?.symbol} = {swapData ? (Number(swapData.amountOut) / Number(swapData.amountIn)).toFixed(6) : '0'} {tokenOut?.symbol}
+                1 {tokenIn?.symbol} = {swapData ? (Number(amountOut) / Number(amountIn)).toFixed(6) : '0'} {tokenOut?.symbol}
               </span>
             </div>
 

@@ -77,9 +77,9 @@ function App() {
     const presets = tokenDirectory[selectedChain] ?? []
     const mappedPresets: Token[] = presets.map(p => ({
       address: p.address,
-      symbol: p.symbol, // Using label as symbol for presets
+      symbol: p.symbol,
       name: p.label,
-      decimals: 18,
+      decimals: p.decimals,
       chainId: CHAIN_ID_BY_KEY[selectedChain]
     }))
     return [...mappedPresets, ...importedTokens.filter(t => t.chainId === CHAIN_ID_BY_KEY[selectedChain])]
@@ -222,7 +222,7 @@ function App() {
       address: presetA.address,
       symbol: presetA.symbol,
       name: presetA.label,
-      decimals: 18,
+      decimals: presetA.decimals,
       chainId
     } : null
 
@@ -230,7 +230,7 @@ function App() {
       address: presetB.address,
       symbol: presetB.symbol,
       name: presetB.label,
-      decimals: 18,
+      decimals: presetB.decimals,
       chainId
     } : null
 

@@ -177,24 +177,24 @@ export const estimateAmountOutFromMidPrice = (
 }
 
 export const compareQuotes = (a: PriceQuote, b: PriceQuote) => {
-  // Primary: Higher amountOut wins
   if (a.amountOut !== b.amountOut) {
     return a.amountOut > b.amountOut ? -1 : 1
   }
   
-  // Secondary: Better net output after gas cost wins
-  const aNetOut = a.estimatedGasCostWei ? a.amountOut - a.estimatedGasCostWei : a.amountOut
-  const bNetOut = b.estimatedGasCostWei ? b.amountOut - b.estimatedGasCostWei : b.amountOut
-  if (aNetOut !== bNetOut) {
-    return aNetOut > bNetOut ? -1 : 1
+  const aHasGas = a.estimatedGasCostWei !== undefined && a.estimatedGasCostWei !== null
+  const bHasGas = b.estimatedGasCostWei !== undefined && b.estimatedGasCostWei !== null
+  if (aHasGas && bHasGas) {
+    if (a.estimatedGasCostWei! !== b.estimatedGasCostWei!) {
+      return a.estimatedGasCostWei! < b.estimatedGasCostWei! ? -1 : 1
+    }
+  } else if (aHasGas !== bHasGas) {
+    return aHasGas ? -1 : 1
   }
   
-  // Tertiary: Higher liquidity wins (more stable)
   if (a.liquidityScore !== b.liquidityScore) {
     return a.liquidityScore > b.liquidityScore ? -1 : 1
   }
   
-  // Final: Lower price impact wins
   return a.priceImpactBps <= b.priceImpactBps ? -1 : 1
 }
 

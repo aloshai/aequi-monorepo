@@ -7,7 +7,7 @@ export const parseAmountToUnits = (value: string, decimals: number): bigint => {
     throw new Error('Amount is required')
   }
 
-  if (!/^(\d+)(\.\d+)?$/.test(trimmed)) {
+  if (!/^(\d+)(\.\d+)?$|^\.\d+$/.test(trimmed)) {
     throw new Error('Amount must be a positive number')
   }
 

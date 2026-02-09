@@ -1,6 +1,11 @@
 import type { QuoteResponse, RouteToken } from '../types/api'
 import { getTokenLogo } from '../utils/logos'
 
+const NATIVE_SYMBOL: Record<string, string> = {
+  ethereum: 'ETH',
+  bsc: 'BNB',
+}
+
 interface QuoteAnalysisProps {
   quote: QuoteResponse
   tokenA: RouteToken
@@ -8,7 +13,9 @@ interface QuoteAnalysisProps {
 }
 
 export function QuoteAnalysis({ quote, tokenA, tokenB }: QuoteAnalysisProps) {
-  const gasCostEth = quote.estimatedGasCostWei
+  const nativeCurrency = NATIVE_SYMBOL[quote.chain] ?? 'ETH'
+
+  const gasCostDisplay = quote.estimatedGasCostWei
     ? (Number(quote.estimatedGasCostWei) / 10 ** 18).toFixed(6)
     : 'Unknown'
 
@@ -20,10 +27,11 @@ export function QuoteAnalysis({ quote, tokenA, tokenB }: QuoteAnalysisProps) {
         ? '#e6a23c'
         : 'var(--accent-color)'
 
-  // Calculate spread (Mid Price vs Execution Price)
-  const midPrice = Number(quote.midPriceQ18)
-  const execPrice = Number(quote.executionPriceQ18)
-  const spread = midPrice > 0 ? ((midPrice - execPrice) / midPrice) * 100 : 0
+  const midPriceBig = BigInt(quote.midPriceQ18)
+  const execPriceBig = BigInt(quote.executionPriceQ18)
+  const spread = midPriceBig > 0n
+    ? Number((midPriceBig - execPriceBig) * 10000n / midPriceBig) / 100
+    : 0
 
   return (
     <div className="quote-analysis-container">
@@ -92,7 +100,7 @@ export function QuoteAnalysis({ quote, tokenA, tokenB }: QuoteAnalysisProps) {
           <div className="card-label">Network Costs</div>
           <div className="stat-row">
             <span className="stat-label">Est. Gas Cost</span>
-            <span className="stat-value">{gasCostEth} ETH</span>
+            <span className="stat-value">{gasCostDisplay} {nativeCurrency}</span>
           </div>
           <div className="stat-row">
             <span className="stat-label">Gas Units</span>

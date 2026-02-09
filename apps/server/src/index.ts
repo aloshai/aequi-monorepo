@@ -555,6 +555,11 @@ export const buildServer = async () => {
         const effectiveTokenA = useNativeInput ? chain.wrappedNativeAddress.toLowerCase() as Address : tokenA
         const effectiveTokenB = useNativeOutput ? chain.wrappedNativeAddress.toLowerCase() as Address : tokenB
 
+        if (effectiveTokenA === effectiveTokenB) {
+            reply.status(400)
+            return { error: 'invalid_request', message: 'tokenA and tokenB resolve to the same token after native wrapping' }
+        }
+
         const slippageInput = Number.isFinite(parsed.data.slippageBps) ? parsed.data.slippageBps! : undefined
         const slippageBps = slippageInput ?? 50
         const deadlineSeconds = Number.isFinite(parsed.data.deadlineSeconds) ? parsed.data.deadlineSeconds! : 180
