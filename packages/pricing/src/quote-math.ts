@@ -1,6 +1,6 @@
 import { CurrencyAmount as CakeCurrencyAmount, Token as CakeToken } from '@pancakeswap/swap-sdk-core'
 import { CurrencyAmount as UniCurrencyAmount, Token as UniToken } from '@uniswap/sdk-core'
-import type { DexConfig, PriceQuote, RouteHopVersion } from '@aequi/core'
+import type { DexConfig, PriceQuote, PriceSource, RouteHopVersion } from '@aequi/core'
 import { Q18, multiplyQ18 } from './math'
 
 export const getV2AmountOut = (amountIn: bigint, reserveIn: bigint, reserveOut: bigint): bigint => {
@@ -220,5 +220,88 @@ export const multiplyQuotePrices = (a: PriceQuote, b: PriceQuote): { mid: bigint
   return {
     mid: multiplyQ18(a.midPriceQ18, b.midPriceQ18),
     execution: multiplyQ18(a.executionPriceQ18, b.executionPriceQ18),
+  }
+}
+
+export const recomputeQuoteForAmount = (
+  original: PriceQuote,
+  newAmountIn: bigint,
+): PriceQuote | null => {
+  if (newAmountIn <= 0n || !original.sources.length || original.path.length < 2) {
+    return null
+  }
+
+  const newSources: PriceSource[] = []
+  let rollingAmountIn = newAmountIn
+
+  for (let i = 0; i < original.sources.length; i++) {
+    const source = original.sources[i]!
+    const tokenIn = original.path[i]!
+    const tokenOut = original.path[i + 1]!
+
+    if (!source.reserves) return null
+
+    let amountOut: bigint
+
+    if (source.reserves.reserve0 !== undefined && source.reserves.reserve1 !== undefined && source.reserves.token0) {
+      const isToken0In = tokenIn.address.toLowerCase() === source.reserves.token0.toLowerCase()
+      const reserveIn = isToken0In ? source.reserves.reserve0 : source.reserves.reserve1
+      const reserveOut = isToken0In ? source.reserves.reserve1 : source.reserves.reserve0
+      amountOut = getV2AmountOut(rollingAmountIn, reserveIn, reserveOut)
+    } else if (source.reserves.liquidity !== undefined && source.reserves.liquidity > 0n) {
+      if (source.amountIn === 0n || source.amountOut === 0n) return null
+      amountOut = (rollingAmountIn * source.amountOut) / source.amountIn
+    } else {
+      return null
+    }
+
+    if (amountOut <= 0n) return null
+
+    newSources.push({
+      ...source,
+      amountIn: rollingAmountIn,
+      amountOut,
+    })
+
+    rollingAmountIn = amountOut
+  }
+
+  const firstToken = original.path[0]!
+  const lastToken = original.path[original.path.length - 1]!
+  const totalAmountOut = newSources[newSources.length - 1]!.amountOut
+
+  const executionPriceQ18 = computeExecutionPriceQ18(
+    newAmountIn,
+    totalAmountOut,
+    firstToken.decimals,
+    lastToken.decimals,
+  )
+
+  const priceImpactBps = computePriceImpactBps(
+    original.midPriceQ18,
+    newAmountIn,
+    totalAmountOut,
+    firstToken.decimals,
+    lastToken.decimals,
+  )
+
+  const hopVersions = [...original.hopVersions]
+  const estimatedGasUnits = estimateGasForRoute(hopVersions)
+  const estimatedGasCostWei = original.gasPriceWei ? estimatedGasUnits * original.gasPriceWei : null
+
+  return {
+    ...original,
+    amountIn: newAmountIn,
+    amountOut: totalAmountOut,
+    priceQ18: executionPriceQ18,
+    executionPriceQ18,
+    priceImpactBps,
+    sources: newSources,
+    hopVersions,
+    estimatedGasUnits,
+    estimatedGasCostWei,
+    offers: undefined,
+    isSplit: undefined,
+    splits: undefined,
   }
 }

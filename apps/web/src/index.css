@@ -1842,3 +1842,61 @@ button {
   cursor: not-allowed;
 }
 
+/* Split Routing */
+.split-badge {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: rgba(30, 200, 100, 0.15);
+  color: var(--accent-color);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.split-routes {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.split-leg {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+
+.split-leg-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.split-ratio {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--accent-color);
+  min-width: 36px;
+}
+
+.split-source {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.split-leg-amount {
+  margin-left: auto;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.split-route-summary {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+

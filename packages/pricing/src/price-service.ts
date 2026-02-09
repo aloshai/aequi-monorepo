@@ -3,6 +3,7 @@ import type { ChainConfig, PriceQuote, RouteHopVersion, RoutePreference, TokenMe
 import { defaultAmountForDecimals } from './units'
 import { selectBestQuote } from './route-planner'
 import { compareQuotes } from './quote-math'
+import { findBestSplit, type SplitOptimizerConfig } from './split-optimizer'
 import type { ChainClientProvider, QuoteResult } from './types'
 import type { TokenService } from './token-service'
 import { PoolDiscovery } from './pool-discovery'
@@ -25,11 +26,16 @@ const clampSlippage = (value: number): number => {
 }
 
 export class PriceService {
+  private readonly splitConfig: SplitOptimizerConfig | null
+
   constructor(
     private readonly tokenService: TokenService,
     private readonly clientProvider: ChainClientProvider,
     private readonly poolDiscovery: PoolDiscovery,
-  ) {}
+    splitConfig?: SplitOptimizerConfig | null,
+  ) {
+    this.splitConfig = splitConfig ?? null
+  }
 
   async getBestPrice(
     chain: ChainConfig,
@@ -38,6 +44,7 @@ export class PriceService {
     amountIn?: bigint,
     preference: RoutePreference = 'auto',
     forceMultiHop?: boolean,
+    enableSplit?: boolean,
   ): Promise<PriceQuote | null> {
     const [tokenIn, tokenOut] = await Promise.all([
       this.tokenService.getTokenMetadata(chain, tokenA),
@@ -48,7 +55,7 @@ export class PriceService {
       ? amountIn
       : defaultAmountForDecimals(tokenIn.decimals)
 
-    return this.getBestQuoteForTokens(chain, tokenIn, tokenOut, effectiveAmountIn, preference, forceMultiHop)
+    return this.getBestQuoteForTokens(chain, tokenIn, tokenOut, effectiveAmountIn, preference, forceMultiHop, enableSplit)
   }
 
   async getBestQuoteForTokens(
@@ -58,6 +65,7 @@ export class PriceService {
     amountIn: bigint,
     preference: RoutePreference = 'auto',
     forceMultiHop?: boolean,
+    enableSplit?: boolean,
   ): Promise<PriceQuote | null> {
     if (amountIn <= 0n) {
       return null
@@ -79,6 +87,21 @@ export class PriceService {
     ])
 
     const candidates = forceMultiHop ? multiHopQuotes : [...directQuotes, ...multiHopQuotes]
+
+    const shouldSplit = enableSplit !== false && this.splitConfig !== null
+    if (shouldSplit && candidates.length >= 2) {
+      const sorted = [...candidates].sort(compareQuotes)
+      const splitResult = findBestSplit(sorted, amountIn, this.splitConfig!)
+
+      if (splitResult) {
+        const remaining = sorted.filter((q) => q !== sorted[0]).sort(compareQuotes)
+        if (remaining.length) {
+          splitResult.offers = remaining
+        }
+        return splitResult
+      }
+    }
+
     const best = selectBestQuote(candidates)
     if (!best) {
       return null

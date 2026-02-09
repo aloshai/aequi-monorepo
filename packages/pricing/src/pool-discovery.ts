@@ -1,8 +1,8 @@
 import type { Address, PublicClient } from 'viem'
-import type { ChainConfig, DexConfig, PriceQuote, RouteHopVersion, TokenMetadata } from '@aequi/core'
+import type { ChainConfig, DexConfig, PriceQuote, PriceSource, RouteHopVersion, TokenMetadata } from '@aequi/core'
 import { AEQUI_LENS_ABI } from '@aequi/core'
 import { V2_FACTORY_ABI, V2_PAIR_ABI, V3_FACTORY_ABI, V3_POOL_ABI, ZERO_ADDRESS, normalizeAddress, AEQUI_LENS_ADDRESSES, sameAddress } from './contracts'
-import { minBigInt, multiplyQ18 } from './math'
+import { minBigInt, multiplyQ18, chainMultiplyQ18 } from './math'
 import { estimateGasForRoute } from './quote-math'
 import { selectBestQuote } from './route-planner'
 import type { ChainClientProvider, PoolDiscoveryConfig } from './types'
@@ -388,108 +388,161 @@ export class PoolDiscovery {
     client: PublicClient,
     allowedVersions: RouteHopVersion[],
   ): Promise<PriceQuote[]> {
-    console.log(`[PoolDiscovery] Fetching multi-hop quotes for ${tokenIn.symbol} -> ${tokenOut.symbol}`)
-    const intermediateAddresses = this.config.intermediateTokenAddresses[chain.key] ?? []
+    const maxDepth = Math.min(Math.max(this.config.maxHopDepth ?? 2, 1), 4)
+    console.log(`[PoolDiscovery] Fetching multi-hop quotes (maxDepth=${maxDepth}) for ${tokenIn.symbol} -> ${tokenOut.symbol}`)
 
-    // Filter out input/output tokens
+    const intermediateAddresses = this.config.intermediateTokenAddresses[chain.key] ?? []
     const validCandidates = intermediateAddresses.filter(
       (candidate) => !sameAddress(candidate, tokenIn.address) && !sameAddress(candidate, tokenOut.address)
     )
 
-    if (validCandidates.length === 0) {
-      return []
-    }
+    if (validCandidates.length === 0) return []
 
-    // Batch fetch all intermediate token metadata
-    console.log(`[PoolDiscovery] Batch fetching ${validCandidates.length} intermediate token metadata`)
     const intermediateTokens = await this.tokenService.getBatchTokenMetadata(
       chain,
       validCandidates as Address[]
     )
 
-    // Fetch all legA quotes in parallel
-    console.log(`[PoolDiscovery] Fetching leg A quotes for ${intermediateTokens.length} intermediates`)
+    const intermediateByAddress = new Map<string, TokenMetadata>()
+    for (const t of intermediateTokens) {
+      intermediateByAddress.set(t.address.toLowerCase(), t)
+    }
+
+    interface PartialRoute {
+      path: TokenMetadata[]
+      sources: PriceSource[]
+      hopVersions: RouteHopVersion[]
+      amountOut: bigint
+      midPrices: bigint[]
+      execPrices: bigint[]
+      priceImpactBps: number
+      liquidityScore: bigint
+      gasPriceWei: bigint | null
+    }
+
+    const MAX_PARTIALS_PER_DEPTH = 5
+    const results: PriceQuote[] = []
+
+    // Depth-1: tokenIn → intermediate
     const legAQuotesArray = await Promise.all(
       intermediateTokens.map((intermediate) =>
         this.fetchDirectQuotes(chain, tokenIn, intermediate, amountIn, gasPriceWei, client, allowedVersions)
       )
     )
 
-    const results: PriceQuote[] = []
-
-    // Process each intermediate token
+    let partials: PartialRoute[] = []
     for (let i = 0; i < intermediateTokens.length; i++) {
       const intermediate = intermediateTokens[i]!
-      const legAQuotes = legAQuotesArray[i]!
+      const legQuotes = legAQuotesArray[i]!
+      for (const leg of legQuotes) {
+        if (!leg || leg.amountOut === 0n) continue
+        partials.push({
+          path: [tokenIn, intermediate],
+          sources: [...leg.sources],
+          hopVersions: [...leg.hopVersions],
+          amountOut: leg.amountOut,
+          midPrices: [leg.midPriceQ18],
+          execPrices: [leg.executionPriceQ18],
+          priceImpactBps: leg.priceImpactBps,
+          liquidityScore: leg.liquidityScore,
+          gasPriceWei: leg.gasPriceWei,
+        })
+      }
+    }
 
-      if (legAQuotes.length === 0) continue
+    // Try closing each partial → tokenOut at every depth
+    for (let depth = 1; depth <= maxDepth; depth++) {
+      if (partials.length === 0) break
 
-      // Collect all unique amountOuts from legA for batch fetching legB
-      const uniqueAmounts = new Set<bigint>()
-      legAQuotes.forEach((legA) => {
-        if (legA && legA.amountOut > 0n) {
-          uniqueAmounts.add(legA.amountOut)
-        }
-      })
-
-      // For simplicity, use the first legA's amountOut or fetch multiple in parallel
-      // Here we'll fetch legB quotes for each legA in parallel
-      const legBQuotesArray = await Promise.all(
-        legAQuotes.map((legA) => {
-          if (!legA || legA.amountOut === 0n) {
-            return Promise.resolve([])
-          }
-          return this.fetchDirectQuotes(
-            chain,
-            intermediate,
-            tokenOut,
-            legA.amountOut,
-            gasPriceWei,
-            client,
-            allowedVersions
-          )
+      // Close attempt: partial.lastToken → tokenOut
+      const closingQuotesArray = await Promise.all(
+        partials.map((p) => {
+          const lastToken = p.path[p.path.length - 1]!
+          return this.fetchDirectQuotes(chain, lastToken, tokenOut, p.amountOut, gasPriceWei, client, allowedVersions)
         })
       )
 
-      // Combine legA and legB quotes
-      for (let j = 0; j < legAQuotes.length; j++) {
-        const legA = legAQuotes[j]
-        const legBQuotes = legBQuotesArray[j]
+      for (let i = 0; i < partials.length; i++) {
+        const partial = partials[i]!
+        const closingLegs = closingQuotesArray[i]!
+        for (const leg of closingLegs) {
+          if (!leg || leg.amountOut === 0n) continue
 
-        if (!legA || legA.amountOut === 0n || !legBQuotes) continue
-
-        for (const legB of legBQuotes) {
-          if (!legB || legB.amountOut === 0n) continue
-
-          const { mid, execution } = {
-            mid: multiplyQ18(legA.midPriceQ18, legB.midPriceQ18),
-            execution: multiplyQ18(legA.executionPriceQ18, legB.executionPriceQ18)
-          }
-
-          const combinedPriceImpactBps = legA.priceImpactBps + legB.priceImpactBps
-          const hopVersions: RouteHopVersion[] = [...legA.hopVersions, ...legB.hopVersions]
+          const allMids = [...partial.midPrices, leg.midPriceQ18]
+          const allExecs = [...partial.execPrices, leg.executionPriceQ18]
+          const hopVersions: RouteHopVersion[] = [...partial.hopVersions, ...leg.hopVersions]
           const estimatedGasUnits = estimateGasForRoute(hopVersions)
-          const gasPrice = legA.gasPriceWei ?? legB.gasPriceWei ?? gasPriceWei
-          const estimatedGasCostWei = gasPrice ? estimatedGasUnits * gasPrice : null
+          const gp = partial.gasPriceWei ?? leg.gasPriceWei ?? gasPriceWei
+          const estimatedGasCostWei = gp ? estimatedGasUnits * gp : null
 
+          const fullPath = [...partial.path, tokenOut]
           results.push({
             chain: chain.key,
             amountIn,
-            amountOut: legB.amountOut,
-            priceQ18: execution,
-            executionPriceQ18: execution,
-            midPriceQ18: mid,
-            priceImpactBps: combinedPriceImpactBps,
-            path: [tokenIn, intermediate, tokenOut],
-            routeAddresses: [tokenIn.address, intermediate.address, tokenOut.address],
-            sources: [...legA.sources, ...legB.sources],
-            liquidityScore: minBigInt(legA.liquidityScore, legB.liquidityScore),
+            amountOut: leg.amountOut,
+            priceQ18: chainMultiplyQ18(allExecs),
+            executionPriceQ18: chainMultiplyQ18(allExecs),
+            midPriceQ18: chainMultiplyQ18(allMids),
+            priceImpactBps: partial.priceImpactBps + leg.priceImpactBps,
+            path: fullPath,
+            routeAddresses: fullPath.map((t) => t.address),
+            sources: [...partial.sources, ...leg.sources],
+            liquidityScore: minBigInt(partial.liquidityScore, leg.liquidityScore),
             hopVersions,
             estimatedGasUnits,
             estimatedGasCostWei,
-            gasPriceWei: gasPrice ?? null,
+            gasPriceWei: gp ?? null,
           })
         }
+      }
+
+      // If we haven't reached max depth, expand partials by one more intermediate
+      if (depth < maxDepth) {
+        // Prune partials to top-K by amountOut
+        partials.sort((a, b) => (a.amountOut > b.amountOut ? -1 : 1))
+        const pruned = partials.slice(0, MAX_PARTIALS_PER_DEPTH)
+
+        const nextPartials: PartialRoute[] = []
+        const expansionPromises = pruned.map((partial) => {
+          const lastToken = partial.path[partial.path.length - 1]!
+          const visitedAddresses = new Set(partial.path.map((t) => t.address.toLowerCase()))
+
+          const expandTargets = intermediateTokens.filter(
+            (t) => !visitedAddresses.has(t.address.toLowerCase()) && !sameAddress(t.address, tokenOut.address)
+          )
+
+          if (expandTargets.length === 0) return Promise.resolve([])
+
+          return Promise.all(
+            expandTargets.map((target) =>
+              this.fetchDirectQuotes(chain, lastToken, target, partial.amountOut, gasPriceWei, client, allowedVersions)
+                .then((quotes) => ({ target, quotes, partial }))
+            )
+          )
+        })
+
+        const expansionResults = await Promise.all(expansionPromises)
+        for (const results of expansionResults) {
+          if (!results || !Array.isArray(results)) continue
+          for (const { target, quotes, partial } of results) {
+            for (const leg of quotes) {
+              if (!leg || leg.amountOut === 0n) continue
+              nextPartials.push({
+                path: [...partial.path, target],
+                sources: [...partial.sources, ...leg.sources],
+                hopVersions: [...partial.hopVersions, ...leg.hopVersions],
+                amountOut: leg.amountOut,
+                midPrices: [...partial.midPrices, leg.midPriceQ18],
+                execPrices: [...partial.execPrices, leg.executionPriceQ18],
+                priceImpactBps: partial.priceImpactBps + leg.priceImpactBps,
+                liquidityScore: minBigInt(partial.liquidityScore, leg.liquidityScore),
+                gasPriceWei: partial.gasPriceWei ?? leg.gasPriceWei,
+              })
+            }
+          }
+        }
+
+        partials = nextPartials
       }
     }
 

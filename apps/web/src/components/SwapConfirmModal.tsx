@@ -120,13 +120,26 @@ export function SwapConfirmModal({
             <div className="swap-detail-row">
               <span className="swap-detail-label">Route</span>
               <span className="swap-detail-value route-display">
-                {tokenIn?.symbol}
-                {routePath.length > 0 && routePath.map((token, idx) => (
-                  <span key={idx}>
-                    <span className="route-arrow"> → </span>
-                    {token.symbol}
+                {swapData?.isSplit && swapData.splits ? (
+                  <span className="split-route-summary">
+                    Split: {swapData.splits.map((leg, i) => (
+                      <span key={i}>
+                        {i > 0 && ' + '}
+                        {(leg.ratioBps / 100).toFixed(0)}% {leg.quote.source}
+                      </span>
+                    ))}
                   </span>
-                ))}
+                ) : (
+                  <>
+                    {tokenIn?.symbol}
+                    {routePath.length > 0 && routePath.map((token, idx) => (
+                      <span key={idx}>
+                        <span className="route-arrow"> → </span>
+                        {token.symbol}
+                      </span>
+                    ))}
+                  </>
+                )}
               </span>
             </div>
 

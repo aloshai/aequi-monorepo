@@ -51,9 +51,16 @@ export interface RouteSource {
     reserve0?: string
     reserve1?: string
     liquidity?: string
+    sqrtPriceX96?: string
+    tick?: number
     token0?: string
     token1?: string
   }
+}
+
+export interface SplitLegResponse {
+  ratioBps: number
+  quote: PriceResponse
 }
 
 export interface PriceResponse {
@@ -78,6 +85,8 @@ export interface PriceResponse {
   routePreference: 'auto' | 'v2' | 'v3'
   pools: RoutePool[]
   sources: RouteSource[]
+  isSplit?: boolean
+  splits?: SplitLegResponse[]
 }
 
 export interface QuoteResponse extends PriceResponse {

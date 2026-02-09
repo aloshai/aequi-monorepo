@@ -51,9 +51,16 @@ export interface PriceSource {
     reserve0?: bigint
     reserve1?: bigint
     liquidity?: bigint
+    sqrtPriceX96?: bigint
+    tick?: number
     token0?: Address
     token1?: Address
   }
+}
+
+export interface SplitLeg {
+  quote: PriceQuote
+  ratioBps: number
 }
 
 export interface PriceQuote {
@@ -73,6 +80,8 @@ export interface PriceQuote {
   estimatedGasCostWei: bigint | null
   gasPriceWei: bigint | null
   offers?: PriceQuote[]
+  isSplit?: boolean
+  splits?: SplitLeg[]
 }
 
 export interface QuoteResult {

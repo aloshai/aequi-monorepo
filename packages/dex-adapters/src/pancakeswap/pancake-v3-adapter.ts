@@ -131,6 +131,8 @@ export class PancakeV3Adapter extends BaseDexAdapter {
             amountOut,
             reserves: {
               liquidity,
+              sqrtPriceX96,
+              tick,
               token0,
               token1,
             },

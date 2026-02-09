@@ -37,7 +37,55 @@ export function QuoteAnalysis({ quote, tokenA, tokenB }: QuoteAnalysisProps) {
     <div className="quote-analysis-container">
       {/* 1. Route Visualization */}
       <div className="analysis-card route-card">
-        <div className="card-label">Routing Path</div>
+        <div className="card-label">
+          Routing Path
+          {quote.isSplit && <span className="split-badge">Split Order</span>}
+        </div>
+        {quote.isSplit && quote.splits ? (
+          <div className="split-routes">
+            {quote.splits.map((leg, legIdx) => (
+              <div key={legIdx} className="split-leg">
+                <div className="split-leg-header">
+                  <span className="split-ratio">{(leg.ratioBps / 100).toFixed(0)}%</span>
+                  <span className="split-source">{leg.quote.source}</span>
+                </div>
+                <div className="route-visualizer">
+                  {leg.quote.tokens.map((token, idx) => {
+                    const isLast = idx === leg.quote.tokens.length - 1
+                    const pool = !isLast ? leg.quote.pools[idx] : null
+                    return (
+                      <div key={token.address} className="route-step">
+                        <div className="route-token">
+                          <img
+                            src={getTokenLogo(token.symbol)}
+                            alt={token.symbol}
+                            className="route-token-icon"
+                            onError={(e) => (e.currentTarget.style.display = 'none')}
+                          />
+                          <span className="route-token-symbol">{token.symbol}</span>
+                        </div>
+                        {!isLast && pool && (
+                          <div className="route-connector">
+                            <div className="connector-line"></div>
+                            <div className="pool-badge">
+                              <span className="pool-dex">{pool.dexId.split('-')[0]}</span>
+                              {pool.feeTier && <span className="pool-fee">{pool.feeTier / 10000}%</span>}
+                              <span className="pool-version">{leg.quote.hopVersions[idx]}</span>
+                            </div>
+                            <div className="connector-line"></div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                  <div className="split-leg-amount">
+                    {(Number(leg.quote.amountOut) / 10 ** tokenB.decimals).toFixed(4)} {tokenB.symbol}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
         <div className="route-visualizer">
           {quote.tokens.map((token, idx) => {
             const isLast = idx === quote.tokens.length - 1
@@ -70,6 +118,7 @@ export function QuoteAnalysis({ quote, tokenA, tokenB }: QuoteAnalysisProps) {
             )
           })}
         </div>
+        )}
       </div>
 
       {/* 2. Market Data Grid */}

@@ -19,6 +19,7 @@ export class QuoteService {
     slippageBps: number,
     preference: RoutePreference = 'auto',
     forceMultiHop: boolean = false,
+    enableSplit?: boolean,
   ): Promise<QuoteResult | null> {
     if (tokenInAddress.toLowerCase() === tokenOutAddress.toLowerCase()) {
       return null
@@ -35,7 +36,7 @@ export class QuoteService {
     }
 
     console.log(`[QuoteService] Requesting quote for ${tokenIn.symbol} -> ${tokenOut.symbol} (Amount: ${amountIn})`)
-    const quote = await this.priceService.getBestQuoteForTokens(chain, tokenIn, tokenOut, amountIn, preference, forceMultiHop)
+    const quote = await this.priceService.getBestQuoteForTokens(chain, tokenIn, tokenOut, amountIn, preference, forceMultiHop, enableSplit)
     if (!quote) {
       console.log('[QuoteService] No quote returned from PriceService')
       return null

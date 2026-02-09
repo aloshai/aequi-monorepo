@@ -14,3 +14,8 @@ export const scaleToQ18 = (amount: bigint, decimals: number): bigint => {
 }
 
 export const multiplyQ18 = (a: bigint, b: bigint): bigint => (a === 0n || b === 0n ? 0n : (a * b) / Q18)
+
+export const chainMultiplyQ18 = (values: bigint[]): bigint => {
+  if (!values.length) return 0n
+  return values.reduce((acc, v) => multiplyQ18(acc, v))
+}

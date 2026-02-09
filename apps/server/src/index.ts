@@ -40,8 +40,11 @@ const poolDiscovery = new PoolDiscovery(tokenService, chainClientProvider, {
     intermediateTokenAddresses: INTERMEDIATE_TOKEN_ADDRESSES,
     minV2ReserveThreshold: MIN_V2_RESERVE_THRESHOLD,
     minV3LiquidityThreshold: MIN_V3_LIQUIDITY_THRESHOLD,
+    maxHopDepth: appConfig.routing.maxHopDepth,
 })
-const priceService = new PriceService(tokenService, chainClientProvider, poolDiscovery)
+const priceService = new PriceService(tokenService, chainClientProvider, poolDiscovery,
+    appConfig.routing.enableSplitRouting ? { maxSplitLegs: appConfig.routing.maxSplitLegs } : null,
+)
 const quoteService = new QuoteService(tokenService, priceService)
 const allowanceService = new AllowanceService(tokenService, chainClientProvider)
 const swapBuilder = new SwapBuilder({
@@ -108,6 +111,8 @@ const formatPriceQuote = (chain: ChainConfig, quote: PriceQuote, routePreference
             reserve0: source.reserves.reserve0?.toString(),
             reserve1: source.reserves.reserve1?.toString(),
             liquidity: source.reserves.liquidity?.toString(),
+            sqrtPriceX96: source.reserves.sqrtPriceX96?.toString(),
+            tick: source.reserves.tick,
             token0: source.reserves.token0,
             token1: source.reserves.token1,
         } : undefined
@@ -141,6 +146,13 @@ const formatPriceQuote = (chain: ChainConfig, quote: PriceQuote, routePreference
         pools,
         sources,
         offers,
+        ...(quote.isSplit && quote.splits ? {
+            isSplit: true,
+            splits: quote.splits.map((leg) => ({
+                ratioBps: leg.ratioBps,
+                quote: formatPriceQuote(chain, leg.quote, routePreference),
+            })),
+        } : {}),
     }
 }
 export const buildServer = async () => {
@@ -334,6 +346,7 @@ export const buildServer = async () => {
             amount: z.string().optional(),
             version: z.enum(['auto', 'v2', 'v3']).optional(),
             forceMultiHop: z.enum(['true', 'false']).optional(),
+            enableSplit: z.enum(['true', 'false']).optional(),
         })
 
         const parsed = querySchema.safeParse(request.query)
@@ -354,6 +367,7 @@ export const buildServer = async () => {
         const tokenB = normalizeAddress(parsed.data.tokenB).toLowerCase() as Address
         const routePreference = resolveRoutePreference(parsed.data.version)
         const forceMultiHop = parsed.data.forceMultiHop === 'true'
+        const enableSplit = parsed.data.enableSplit !== 'false'
 
         if (tokenA === tokenB) {
             reply.status(400)
@@ -401,9 +415,10 @@ export const buildServer = async () => {
                 amountIn,
                 routePreference,
                 forceMultiHop,
+                enableSplit,
             )
         } else {
-            quote = await priceService.getBestPrice(chain, effectiveTokenA, effectiveTokenB, undefined, routePreference, forceMultiHop)
+            quote = await priceService.getBestPrice(chain, effectiveTokenA, effectiveTokenB, undefined, routePreference, forceMultiHop, enableSplit)
             if (quote) {
                 tokenInMeta = quote.path[0]
                 tokenOutMeta = quote.path[quote.path.length - 1]
@@ -426,6 +441,7 @@ export const buildServer = async () => {
             slippageBps: z.string().optional(),
             version: z.enum(['auto', 'v2', 'v3']).optional(),
             forceMultiHop: z.enum(['true', 'false']).optional(),
+            enableSplit: z.enum(['true', 'false']).optional(),
         })
 
         const parsed = querySchema.safeParse(request.query)
@@ -446,6 +462,7 @@ export const buildServer = async () => {
         const tokenB = normalizeAddress(parsed.data.tokenB).toLowerCase() as Address
         const routePreference = resolveRoutePreference(parsed.data.version)
         const forceMultiHop = parsed.data.forceMultiHop === 'true'
+        const enableSplit = parsed.data.enableSplit !== 'false'
 
         if (tokenA === tokenB) {
             reply.status(400)
@@ -477,6 +494,7 @@ export const buildServer = async () => {
                 slippage,
                 routePreference,
                 forceMultiHop,
+                enableSplit,
             )
         } catch (error) {
             reply.status(400)
@@ -520,6 +538,7 @@ export const buildServer = async () => {
             recipient: z.string().refine((value) => isAddress(value, { strict: false }), 'Invalid recipient address'),
             deadlineSeconds: z.coerce.number().optional(),
             forceMultiHop: z.boolean().optional(),
+            enableSplit: z.boolean().optional(),
         })
 
         const parsed = bodySchema.safeParse(request.body)
@@ -564,12 +583,13 @@ export const buildServer = async () => {
         const slippageBps = slippageInput ?? 50
         const deadlineSeconds = Number.isFinite(parsed.data.deadlineSeconds) ? parsed.data.deadlineSeconds! : 180
         const forceMultiHop = parsed.data.forceMultiHop ?? false
+        const enableSplit = parsed.data.enableSplit !== false
 
         console.log(`[API] Swap request: ${effectiveTokenA} -> ${effectiveTokenB}, Amount: ${parsed.data.amount}`)
 
         let quoteResult: QuoteResult | null = null
         try {
-            quoteResult = await quoteService.getQuote(chain, effectiveTokenA, effectiveTokenB, parsed.data.amount, slippageBps, routePreference, forceMultiHop)
+            quoteResult = await quoteService.getQuote(chain, effectiveTokenA, effectiveTokenB, parsed.data.amount, slippageBps, routePreference, forceMultiHop, enableSplit)
         } catch (error) {
             reply.status(400)
             return { error: 'invalid_request', message: (error as Error).message }

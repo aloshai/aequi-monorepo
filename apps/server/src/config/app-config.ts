@@ -81,6 +81,11 @@ export const appConfig = {
   swap: {
     quoteTtlSeconds: parseIntWithDefault(process.env.SWAP_QUOTE_TTL_SECONDS, DEFAULTS.executor.quoteTtlSeconds, 1),
   },
+  routing: {
+    maxHopDepth: Math.min(parseIntWithDefault(process.env.MAX_HOP_DEPTH, 2, 1), 4),
+    enableSplitRouting: process.env.ENABLE_SPLIT_ROUTING !== 'false',
+    maxSplitLegs: Math.min(parseIntWithDefault(process.env.MAX_SPLIT_LEGS, 3, 2), 5),
+  },
 } as const
 
 export type AppConfig = typeof appConfig

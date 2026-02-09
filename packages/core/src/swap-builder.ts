@@ -98,7 +98,18 @@ export class SwapBuilder {
       ? params.amountOutMin
       : this.applySlippage(params.quote.amountOut, boundedSlippage)
 
-    // Always use executor for consistent and secure swap execution
+    if (params.quote.isSplit && params.quote.splits?.length) {
+      return this.buildSplitExecutorSwap(
+        chain,
+        params.quote,
+        params.recipient,
+        amountOutMinimum,
+        BigInt(deadline),
+        params.useNativeInput,
+        params.useNativeOutput,
+      )
+    }
+
     return this.buildExecutorSwap(
       chain,
       params.quote,
@@ -331,6 +342,199 @@ export class SwapBuilder {
     return {
       kind: 'executor',
       dexId: quote.sources.length === 1 ? quote.sources[0]!.dexId : 'multi',
+      router: executorAddress,
+      spender: executorAddress,
+      amountIn: quote.amountIn,
+      amountOut: quote.amountOut,
+      amountOutMinimum: amountOutMin,
+      deadline: Number(deadline),
+      calls,
+      call: {
+        to: executorAddress,
+        data: executorData,
+        value: useNativeInput ? quote.amountIn : 0n,
+      },
+      executor: {
+        pulls,
+        approvals,
+        calls: executorCalls,
+        tokensToFlush: Array.from(tokensToFlush),
+      },
+    }
+  }
+
+  private buildSplitExecutorSwap(
+    chain: ChainConfig,
+    quote: PriceQuote,
+    recipient: Address,
+    amountOutMin: bigint,
+    deadline: bigint,
+    useNativeInput?: boolean,
+    useNativeOutput?: boolean,
+  ): SwapTransaction {
+    const splits = quote.splits!
+    if (splits.length < 2) {
+      throw new Error('Split quote must have at least 2 legs')
+    }
+
+    const executorAddress = this.resolveExecutor(chain.key, chain.name)
+    const inputToken = quote.path[0]
+    if (!inputToken) {
+      throw new Error('Quote is missing input token metadata')
+    }
+
+    const pulls: SwapTransaction['executor']['pulls'] = []
+    if (!useNativeInput) {
+      pulls.push({ token: inputToken.address, amount: quote.amountIn })
+    }
+
+    const approvals: SwapTransaction['executor']['approvals'] = []
+    const executorCalls: SwapTransaction['executor']['calls'] = []
+    const tokensToFlush = new Set<Address>()
+    const calls: ExecutorCallPlan[] = []
+
+    if (!useNativeInput) {
+      tokensToFlush.add(inputToken.address)
+    }
+
+    if (useNativeInput) {
+      if (!chain.wrappedNativeAddress) {
+        throw new Error(`Wrapped native address not configured for chain ${chain.name}`)
+      }
+      executorCalls.push({
+        target: chain.wrappedNativeAddress,
+        value: quote.amountIn,
+        data: encodeFunctionData({ abi: WETH_ABI, functionName: 'deposit', args: [] }),
+        injectToken: '0x0000000000000000000000000000000000000000' as Address,
+        injectOffset: 0n,
+      })
+      tokensToFlush.add(chain.wrappedNativeAddress)
+    }
+
+    let allocatedIn = 0n
+    let allocatedMinOut = 0n
+
+    for (let legIdx = 0; legIdx < splits.length; legIdx++) {
+      const leg = splits[legIdx]!
+      const legQuote = leg.quote
+      const isLastLeg = legIdx === splits.length - 1
+
+      const legAmountIn = isLastLeg
+        ? quote.amountIn - allocatedIn
+        : (quote.amountIn * BigInt(leg.ratioBps)) / 10000n
+      allocatedIn += legAmountIn
+
+      const legMinOut = isLastLeg
+        ? amountOutMin - allocatedMinOut
+        : (amountOutMin * BigInt(leg.ratioBps)) / 10000n
+      allocatedMinOut += legMinOut
+
+      let availableAmount = legAmountIn
+
+      for (let hopIdx = 0; hopIdx < legQuote.sources.length; hopIdx++) {
+        const source = legQuote.sources[hopIdx]!
+        const hopTokenIn = legQuote.path[hopIdx]!
+        const hopTokenOut = legQuote.path[hopIdx + 1]!
+        const hopVersion = legQuote.hopVersions[hopIdx]!
+
+        const dex = chain.dexes.find((d) => d.id === source.dexId)
+        if (!dex) {
+          throw new Error(`DEX ${source.dexId} not configured for chain ${chain.name}`)
+        }
+
+        const quotedHopAmountIn = source.amountIn
+        if (!quotedHopAmountIn || quotedHopAmountIn <= 0n) {
+          throw new Error('Missing hop amountIn for split executor construction')
+        }
+
+        let hopAmountIn = hopIdx === 0 ? legAmountIn : availableAmount
+
+        if (hopIdx > 0 && this.interhopBufferBps > 0 && hopAmountIn > 0n) {
+          const buffer = (hopAmountIn * BigInt(this.interhopBufferBps)) / 10_000n
+          if (buffer > 0n && buffer < hopAmountIn) {
+            hopAmountIn -= buffer
+          }
+        }
+
+        const isLastHopOfLeg = hopIdx === legQuote.sources.length - 1
+        const hopMinOut = isLastHopOfLeg ? legMinOut : 0n
+        const hopRecipient = executorAddress
+
+        approvals.push({
+          token: hopTokenIn.address,
+          spender: dex.routerAddress,
+          amount: hopIdx > 0
+            ? BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
+            : hopAmountIn,
+          revokeAfter: true,
+        })
+
+        const swapCallData = hopVersion === 'v2'
+          ? this.encodeV2SingleHopCall(hopTokenIn.address, hopTokenOut.address, hopAmountIn, hopMinOut, hopRecipient, deadline)
+          : this.encodeV3SingleHopCall(hopTokenIn.address, hopTokenOut.address, source.feeTier, hopAmountIn, hopMinOut, hopRecipient, deadline, dex.useRouter02)
+
+        const isInjectionNeeded = hopIdx > 0
+        const injectToken = isInjectionNeeded
+          ? hopTokenIn.address
+          : '0x0000000000000000000000000000000000000000' as Address
+
+        let injectOffset = 0n
+        if (isInjectionNeeded) {
+          if (hopVersion === 'v2') {
+            injectOffset = 4n
+          } else if (dex.useRouter02) {
+            injectOffset = 132n
+          } else {
+            injectOffset = 164n
+          }
+        }
+
+        executorCalls.push({
+          target: dex.routerAddress,
+          value: 0n,
+          data: swapCallData,
+          injectToken,
+          injectOffset,
+        })
+
+        tokensToFlush.add(hopTokenIn.address)
+        tokensToFlush.add(hopTokenOut.address)
+
+        calls.push({
+          target: dex.routerAddress,
+          allowFailure: false,
+          callData: swapCallData,
+          value: 0n,
+        })
+
+        const scaledHopExpectedOut = (source.amountOut * hopAmountIn) / quotedHopAmountIn
+        availableAmount = scaledHopExpectedOut
+      }
+    }
+
+    if (useNativeOutput) {
+      if (!chain.wrappedNativeAddress) {
+        throw new Error(`Wrapped native address not configured for chain ${chain.name}`)
+      }
+      executorCalls.push({
+        target: chain.wrappedNativeAddress,
+        value: 0n,
+        data: encodeFunctionData({ abi: WETH_ABI, functionName: 'withdraw', args: [0n] }),
+        injectToken: chain.wrappedNativeAddress,
+        injectOffset: 4n,
+      })
+      tokensToFlush.add(chain.wrappedNativeAddress)
+    }
+
+    const executorData = encodeFunctionData({
+      abi: AEQUI_EXECUTOR_ABI,
+      functionName: 'execute',
+      args: [pulls, approvals, executorCalls, Array.from(tokensToFlush)],
+    })
+
+    return {
+      kind: 'executor',
+      dexId: 'split',
       router: executorAddress,
       spender: executorAddress,
       amountIn: quote.amountIn,

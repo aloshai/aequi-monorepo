@@ -17,6 +17,7 @@ export interface PoolDiscoveryConfig {
   intermediateTokenAddresses: Record<ChainKey, Address[]>
   minV2ReserveThreshold: bigint
   minV3LiquidityThreshold: bigint
+  maxHopDepth: number
 }
 
 export interface QuoteResult {
