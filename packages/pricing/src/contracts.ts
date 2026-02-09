@@ -5,7 +5,7 @@ export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as cons
 export const AEQUI_LENS_ADDRESSES: Record<number, Address> = {
   // 1: '0x...', // Ethereum - Deploy later
   // 56: '0x...', // BSC - Deploy later
-  56: "0x7850BcB4048BA8F3b48311C94552Ae06bBF5131f"
+  56: "0x262c3f2B65966f48260972cb64002B2CCf629581"
   // Add deployed addresses after deployment
 }
 

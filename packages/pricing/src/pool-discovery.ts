@@ -104,7 +104,7 @@ export class PoolDiscovery {
 
     console.log(`[PoolDiscovery] Chain ID: ${chain.id}, Lens address: ${lensAddress}, V2 pools: ${poolsByType.v2Pools.length}, V3 pools: ${poolsByType.v3Pools.length}`)
 
-    if (lensAddress && poolsByType.v2Pools.length > 0) {
+    if (lensAddress && (poolsByType.v2Pools.length > 0 || poolsByType.v3Pools.length > 0)) {
       v2PoolData = new Map()
       v3PoolData = new Map()
 
@@ -144,106 +144,57 @@ export class PoolDiscovery {
             args: [v3Addresses],
           })
 
+          const failedV3Pools: typeof poolsByType.v3Pools = []
+
           batchResult.forEach((data: any, idx: number) => {
             const poolAddr = v3Addresses[idx]!
-            v3PoolData.set(poolAddr, {
-              sqrtPriceX96: data.sqrtPriceX96,
-              tick: Number(data.tick),
-              liquidity: data.liquidity,
-              token0: data.token0,
-              token1: data.token1,
-              success: data.exists,
-            })
-          })
-        } catch (error) {
-          console.warn(`[PoolDiscovery] AequiLens V3 batch failed, falling back to multicall:`, (error as Error).message)
-
-          // Fallback to multicall
-          const poolDataCalls: any[] = []
-          const poolMap: { poolAddress: Address; dex: DexConfig; fee: number; startIndex: number }[] = []
-
-          poolsByType.v3Pools.forEach((item) => {
-            poolDataCalls.push(
-              { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'slot0' },
-              { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'liquidity' },
-              { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'token0' },
-              { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'token1' },
-            )
-            poolMap.push({ poolAddress: item.poolAddress, dex: item.dex, fee: item.fee, startIndex: poolDataCalls.length - 4 })
-          })
-
-          const poolDataResults = await client.multicall({
-            allowFailure: true,
-            contracts: poolDataCalls,
-          })
-
-          poolMap.forEach((item) => {
-            const slotRes = poolDataResults[item.startIndex]
-            const liquidityRes = poolDataResults[item.startIndex + 1]
-            const token0Res = poolDataResults[item.startIndex + 2]
-            const token1Res = poolDataResults[item.startIndex + 3]
-
-            if (slotRes && liquidityRes && token0Res && token1Res &&
-              slotRes.status === 'success' && liquidityRes.status === 'success' &&
-              token0Res.status === 'success' && token1Res.status === 'success') {
-              const slotData = slotRes.result as readonly [bigint, number, number, number, number, number, boolean]
-              const liquidityValue = liquidityRes.result as bigint
-              const token0Address = normalizeAddress(token0Res.result as Address)
-              const token1Address = normalizeAddress(token1Res.result as Address)
-
-              v3PoolData.set(item.poolAddress, {
-                sqrtPriceX96: slotData[0],
-                tick: Number(slotData[1]),
-                liquidity: liquidityValue,
-                token0: token0Address,
-                token1: token1Address,
+            if (data.exists) {
+              v3PoolData.set(poolAddr, {
+                sqrtPriceX96: data.sqrtPriceX96,
+                tick: Number(data.tick),
+                liquidity: data.liquidity,
+                token0: data.token0,
+                token1: data.token1,
                 success: true,
               })
+            } else {
+              failedV3Pools.push(poolsByType.v3Pools[idx]!)
             }
           })
+
+          if (failedV3Pools.length > 0) {
+            console.log(`[PoolDiscovery] AequiLens returned exists=false for ${failedV3Pools.length} V3 pools, re-fetching via multicall`)
+            await this.fetchV3PoolDataViaMulticall(failedV3Pools, v3PoolData, client)
+          }
+        } catch (error) {
+          console.warn(`[PoolDiscovery] AequiLens V3 batch failed, falling back to multicall:`, (error as Error).message)
+          await this.fetchV3PoolDataViaMulticall(poolsByType.v3Pools, v3PoolData, client)
         }
       }
     } else if (!lensAddress && (poolsByType.v2Pools.length > 0 || poolsByType.v3Pools.length > 0)) {
       console.log(`[PoolDiscovery] Falling back to multicall (lens address not found)`)
-      const poolDataCalls: any[] = []
-      const poolMap: {
-        type: 'v2' | 'v3'
-        dex: DexConfig
-        fee?: number
-        poolAddress: Address
-        startIndex: number
-      }[] = []
-
-      poolsByType.v2Pools.forEach((item) => {
-        poolDataCalls.push(
-          { address: item.poolAddress, abi: V2_PAIR_ABI, functionName: 'getReserves' },
-          { address: item.poolAddress, abi: V2_PAIR_ABI, functionName: 'token0' },
-        )
-        poolMap.push({ type: 'v2', dex: item.dex, poolAddress: item.poolAddress, startIndex: poolDataCalls.length - 2 })
-      })
-
-      poolsByType.v3Pools.forEach((item) => {
-        poolDataCalls.push(
-          { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'slot0' },
-          { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'liquidity' },
-          { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'token0' },
-          { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'token1' },
-        )
-        poolMap.push({ type: 'v3', dex: item.dex, fee: item.fee, poolAddress: item.poolAddress, startIndex: poolDataCalls.length - 4 })
-      })
-
-      if (poolDataCalls.length === 0) return []
-
-      const poolDataResults = await client.multicall({
-        allowFailure: true,
-        contracts: poolDataCalls,
-      })
 
       v2PoolData = new Map()
       v3PoolData = new Map()
 
-      poolMap.forEach((item) => {
-        if (item.type === 'v2') {
+      if (poolsByType.v2Pools.length > 0) {
+        const poolDataCalls: any[] = []
+        const poolMap: { poolAddress: Address; startIndex: number }[] = []
+
+        poolsByType.v2Pools.forEach((item) => {
+          poolDataCalls.push(
+            { address: item.poolAddress, abi: V2_PAIR_ABI, functionName: 'getReserves' },
+            { address: item.poolAddress, abi: V2_PAIR_ABI, functionName: 'token0' },
+          )
+          poolMap.push({ poolAddress: item.poolAddress, startIndex: poolDataCalls.length - 2 })
+        })
+
+        const poolDataResults = await client.multicall({
+          allowFailure: true,
+          contracts: poolDataCalls,
+        })
+
+        poolMap.forEach((item) => {
           const reservesRes = poolDataResults[item.startIndex]
           const token0Res = poolDataResults[item.startIndex + 1]
 
@@ -257,31 +208,12 @@ export class PoolDiscovery {
               success: true,
             })
           }
-        } else {
-          const slotRes = poolDataResults[item.startIndex]
-          const liquidityRes = poolDataResults[item.startIndex + 1]
-          const token0Res = poolDataResults[item.startIndex + 2]
-          const token1Res = poolDataResults[item.startIndex + 3]
+        })
+      }
 
-          if (slotRes && liquidityRes && token0Res && token1Res &&
-            slotRes.status === 'success' && liquidityRes.status === 'success' &&
-            token0Res.status === 'success' && token1Res.status === 'success') {
-            const slotData = slotRes.result as readonly [bigint, number, number, number, number, number, boolean]
-            const liquidityValue = liquidityRes.result as bigint
-            const token0Address = normalizeAddress(token0Res.result as Address)
-            const token1Address = normalizeAddress(token1Res.result as Address)
-
-            v3PoolData.set(item.poolAddress, {
-              sqrtPriceX96: slotData[0],
-              tick: Number(slotData[1]),
-              liquidity: liquidityValue,
-              token0: token0Address,
-              token1: token1Address,
-              success: true,
-            })
-          }
-        }
-      })
+      if (poolsByType.v3Pools.length > 0) {
+        await this.fetchV3PoolDataViaMulticall(poolsByType.v3Pools, v3PoolData, client)
+      }
     }
 
     const quotes: PriceQuote[] = []
@@ -394,6 +326,57 @@ export class PoolDiscovery {
 
     console.log(`[PoolDiscovery] Found ${quotes.length} direct quotes for ${tokenIn.symbol} -> ${tokenOut.symbol}`)
     return quotes
+  }
+
+  private async fetchV3PoolDataViaMulticall(
+    pools: { poolAddress: Address; dex: DexConfig; fee: number }[],
+    v3PoolData: Map<Address, { sqrtPriceX96: bigint; tick: number; liquidity: bigint; token0: Address; token1: Address; success: boolean }>,
+    client: PublicClient,
+  ): Promise<void> {
+    if (pools.length === 0) return
+
+    const poolDataCalls: any[] = []
+    const poolMap: { poolAddress: Address; fee: number; startIndex: number }[] = []
+
+    pools.forEach((item) => {
+      poolDataCalls.push(
+        { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'slot0' },
+        { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'liquidity' },
+        { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'token0' },
+        { address: item.poolAddress, abi: V3_POOL_ABI, functionName: 'token1' },
+      )
+      poolMap.push({ poolAddress: item.poolAddress, fee: item.fee, startIndex: poolDataCalls.length - 4 })
+    })
+
+    const poolDataResults = await client.multicall({
+      allowFailure: true,
+      contracts: poolDataCalls,
+    })
+
+    poolMap.forEach((item) => {
+      const slotRes = poolDataResults[item.startIndex]
+      const liquidityRes = poolDataResults[item.startIndex + 1]
+      const token0Res = poolDataResults[item.startIndex + 2]
+      const token1Res = poolDataResults[item.startIndex + 3]
+
+      if (slotRes && liquidityRes && token0Res && token1Res &&
+        slotRes.status === 'success' && liquidityRes.status === 'success' &&
+        token0Res.status === 'success' && token1Res.status === 'success') {
+        const slotData = slotRes.result as readonly [bigint, number, number, number, number, number, boolean]
+        const liquidityValue = liquidityRes.result as bigint
+        const token0Address = normalizeAddress(token0Res.result as Address)
+        const token1Address = normalizeAddress(token1Res.result as Address)
+
+        v3PoolData.set(item.poolAddress, {
+          sqrtPriceX96: slotData[0],
+          tick: Number(slotData[1]),
+          liquidity: liquidityValue,
+          token0: token0Address,
+          token1: token1Address,
+          success: true,
+        })
+      }
+    })
   }
 
   async fetchMultiHopQuotes(

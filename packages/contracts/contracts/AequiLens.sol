@@ -26,7 +26,7 @@ interface IPoolV3 {
         uint16 observationIndex,
         uint16 observationCardinality,
         uint16 observationCardinalityNext,
-        uint8 feeProtocol,
+        uint32 feeProtocol,
         bool unlocked
     );
     function liquidity() external view returns (uint128);
