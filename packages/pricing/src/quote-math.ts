@@ -305,3 +305,53 @@ export const recomputeQuoteForAmount = (
     splits: undefined,
   }
 }
+
+const Q96 = 1n << 96n
+
+export const estimateV3AmountOut = (
+  sqrtPriceX96: bigint,
+  liquidity: bigint,
+  amountIn: bigint,
+  fee: number,
+  zeroForOne: boolean,
+): bigint => {
+  if (sqrtPriceX96 === 0n || liquidity === 0n || amountIn === 0n) return 0n
+
+  const amountInAfterFee = (amountIn * BigInt(1_000_000 - fee)) / 1_000_000n
+  if (amountInAfterFee <= 0n) return 0n
+
+  if (zeroForOne) {
+    const numerator1 = liquidity << 96n
+    const denominator = numerator1 + amountInAfterFee * sqrtPriceX96
+    if (denominator === 0n) return 0n
+    const sqrtPriceNextX96 = (numerator1 * sqrtPriceX96) / denominator
+    if (sqrtPriceNextX96 >= sqrtPriceX96) return 0n
+    return (liquidity * (sqrtPriceX96 - sqrtPriceNextX96)) / Q96
+  }
+
+  const sqrtPriceNextX96 = sqrtPriceX96 + (amountInAfterFee << 96n) / liquidity
+  if (sqrtPriceNextX96 <= sqrtPriceX96 || sqrtPriceNextX96 === 0n) return 0n
+  const num = liquidity * Q96
+  return (num / sqrtPriceX96) - (num / sqrtPriceNextX96)
+}
+
+export const computeV3MidPriceQ18FromSqrtPrice = (
+  sqrtPriceX96: bigint,
+  zeroForOne: boolean,
+  inDecimals: number,
+  outDecimals: number,
+): bigint => {
+  if (sqrtPriceX96 === 0n) return 0n
+
+  const Q192 = Q96 * Q96
+  const inFactor = 10n ** BigInt(inDecimals)
+  const outFactor = 10n ** BigInt(outDecimals)
+
+  if (zeroForOne) {
+    return (sqrtPriceX96 * sqrtPriceX96 * Q18 * inFactor) / (Q192 * outFactor)
+  }
+
+  const priceSq = sqrtPriceX96 * sqrtPriceX96
+  if (priceSq === 0n) return 0n
+  return (Q192 * Q18 * inFactor) / (priceSq * outFactor)
+}

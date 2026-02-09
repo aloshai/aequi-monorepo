@@ -1,9 +1,9 @@
 import type { Address, PublicClient } from 'viem'
 import type { ChainConfig, DexConfig, PriceQuote, PriceSource, RouteHopVersion, TokenMetadata } from '@aequi/core'
 import { AEQUI_LENS_ABI } from '@aequi/core'
-import { V2_FACTORY_ABI, V2_PAIR_ABI, V3_FACTORY_ABI, V3_POOL_ABI, ZERO_ADDRESS, normalizeAddress, AEQUI_LENS_ADDRESSES, sameAddress } from './contracts'
+import { V2_FACTORY_ABI, V2_PAIR_ABI, V3_FACTORY_ABI, V3_POOL_ABI, V3_QUOTER_ABI, ZERO_ADDRESS, normalizeAddress, AEQUI_LENS_ADDRESSES, sameAddress } from './contracts'
 import { minBigInt, multiplyQ18, chainMultiplyQ18 } from './math'
-import { estimateGasForRoute } from './quote-math'
+import { estimateGasForRoute, getV2AmountOut, computeMidPriceQ18FromReserves, computeExecutionPriceQ18, computePriceImpactBps, estimateV3AmountOut, computeV3MidPriceQ18FromSqrtPrice } from './quote-math'
 import { selectBestQuote } from './route-planner'
 import type { ChainClientProvider, PoolDiscoveryConfig } from './types'
 import type { TokenService } from './token-service'
@@ -27,6 +27,28 @@ interface V3PoolSnapshot {
   token0: Address
   token1: Address
   fee: number
+}
+
+interface PoolNode {
+  poolAddress: Address
+  dex: DexConfig
+  version: 'v2' | 'v3'
+  fee: number
+  token0: Address
+  token1: Address
+  reserve0: bigint
+  reserve1: bigint
+  sqrtPriceX96: bigint
+  tick: number
+  liquidity: bigint
+}
+
+type PoolGraph = Map<string, PoolNode[]>
+
+const pairKey = (a: Address, b: Address): string => {
+  const la = a.toLowerCase()
+  const lb = b.toLowerCase()
+  return la < lb ? `${la}-${lb}` : `${lb}-${la}`
 }
 
 export class PoolDiscovery {
@@ -379,6 +401,482 @@ export class PoolDiscovery {
     })
   }
 
+  private async buildPoolGraph(
+    chain: ChainConfig,
+    allTokens: TokenMetadata[],
+    client: PublicClient,
+    allowedVersions: RouteHopVersion[],
+  ): Promise<PoolGraph> {
+    const graph: PoolGraph = new Map()
+
+    const pairs: [TokenMetadata, TokenMetadata][] = []
+    for (let i = 0; i < allTokens.length; i++) {
+      for (let j = i + 1; j < allTokens.length; j++) {
+        pairs.push([allTokens[i]!, allTokens[j]!])
+      }
+    }
+
+    if (pairs.length === 0) return graph
+
+    const factoryCalls: any[] = []
+    const callMeta: { pairIdx: number; dex: DexConfig; type: 'v2' | 'v3'; fee: number }[] = []
+
+    for (let pairIdx = 0; pairIdx < pairs.length; pairIdx++) {
+      const [tokenA, tokenB] = pairs[pairIdx]!
+      for (const dex of chain.dexes) {
+        if (!allowedVersions.includes(dex.version)) continue
+        if (dex.version === 'v2') {
+          factoryCalls.push({
+            address: dex.factoryAddress,
+            abi: V2_FACTORY_ABI,
+            functionName: 'getPair',
+            args: [tokenA.address, tokenB.address],
+          })
+          callMeta.push({ pairIdx, dex, type: 'v2', fee: 0 })
+        } else {
+          for (const fee of (dex.feeTiers ?? [])) {
+            factoryCalls.push({
+              address: dex.factoryAddress,
+              abi: V3_FACTORY_ABI,
+              functionName: 'getPool',
+              args: [tokenA.address, tokenB.address, fee],
+            })
+            callMeta.push({ pairIdx, dex, type: 'v3', fee })
+          }
+        }
+      }
+    }
+
+    if (factoryCalls.length === 0) return graph
+
+    const factoryResults = await client.multicall({ allowFailure: true, contracts: factoryCalls })
+
+    const v2PoolAddresses: Address[] = []
+    const v3PoolAddresses: Address[] = []
+    interface DiscoveredPool { poolAddress: Address; pairIdx: number; dex: DexConfig; type: 'v2' | 'v3'; fee: number }
+    const discoveredPools: DiscoveredPool[] = []
+
+    for (let i = 0; i < callMeta.length; i++) {
+      const result = factoryResults[i]
+      if (!result || result.status !== 'success' || !result.result || result.result === ZERO_ADDRESS) continue
+      const meta = callMeta[i]!
+      const poolAddress = result.result as Address
+      discoveredPools.push({ poolAddress, pairIdx: meta.pairIdx, dex: meta.dex, type: meta.type, fee: meta.fee })
+      if (meta.type === 'v2') {
+        v2PoolAddresses.push(poolAddress)
+      } else {
+        v3PoolAddresses.push(poolAddress)
+      }
+    }
+
+    if (discoveredPools.length === 0) return graph
+
+    const v2DataMap = new Map<string, { reserve0: bigint; reserve1: bigint; token0: Address }>()
+    const v3DataMap = new Map<string, { sqrtPriceX96: bigint; tick: number; liquidity: bigint; token0: Address; token1: Address }>()
+
+    const lensAddress = AEQUI_LENS_ADDRESSES[chain.id]
+
+    if (lensAddress) {
+      const lensPromises: Promise<void>[] = []
+
+      if (v2PoolAddresses.length > 0) {
+        lensPromises.push(
+          client.readContract({
+            address: lensAddress,
+            abi: AEQUI_LENS_ABI,
+            functionName: 'batchGetV2PoolData',
+            args: [v2PoolAddresses],
+          }).then((batchResult) => {
+            ;(batchResult as any[]).forEach((data: any, idx: number) => {
+              if (!data.exists) return
+              v2DataMap.set(v2PoolAddresses[idx]!.toLowerCase(), {
+                reserve0: data.reserve0,
+                reserve1: data.reserve1,
+                token0: data.token0,
+              })
+            })
+          }).catch(() => {})
+        )
+      }
+
+      if (v3PoolAddresses.length > 0) {
+        lensPromises.push(
+          client.readContract({
+            address: lensAddress,
+            abi: AEQUI_LENS_ABI,
+            functionName: 'batchGetV3PoolData',
+            args: [v3PoolAddresses],
+          }).then((batchResult) => {
+            ;(batchResult as any[]).forEach((data: any, idx: number) => {
+              if (!data.exists) return
+              v3DataMap.set(v3PoolAddresses[idx]!.toLowerCase(), {
+                sqrtPriceX96: data.sqrtPriceX96,
+                tick: Number(data.tick),
+                liquidity: data.liquidity,
+                token0: data.token0,
+                token1: data.token1,
+              })
+            })
+          }).catch(() => {})
+        )
+      }
+
+      await Promise.all(lensPromises)
+    }
+
+    // Fallback multicall for pools not covered by lens
+    const missingV2 = v2PoolAddresses.filter((a) => !v2DataMap.has(a.toLowerCase()))
+    const missingV3 = v3PoolAddresses.filter((a) => !v3DataMap.has(a.toLowerCase()))
+
+    if (missingV2.length > 0) {
+      const calls: any[] = []
+      missingV2.forEach((addr) => {
+        calls.push(
+          { address: addr, abi: V2_PAIR_ABI, functionName: 'getReserves' },
+          { address: addr, abi: V2_PAIR_ABI, functionName: 'token0' },
+        )
+      })
+      try {
+        const results = await client.multicall({ allowFailure: true, contracts: calls })
+        missingV2.forEach((addr, i) => {
+          const reservesRes = results[i * 2]
+          const token0Res = results[i * 2 + 1]
+          if (reservesRes?.status === 'success' && token0Res?.status === 'success') {
+            const [r0, r1] = reservesRes.result as readonly [bigint, bigint, number]
+            v2DataMap.set(addr.toLowerCase(), {
+              reserve0: r0,
+              reserve1: r1,
+              token0: normalizeAddress(token0Res.result as Address),
+            })
+          }
+        })
+      } catch {}
+    }
+
+    if (missingV3.length > 0) {
+      const calls: any[] = []
+      missingV3.forEach((addr) => {
+        calls.push(
+          { address: addr, abi: V3_POOL_ABI, functionName: 'slot0' },
+          { address: addr, abi: V3_POOL_ABI, functionName: 'liquidity' },
+          { address: addr, abi: V3_POOL_ABI, functionName: 'token0' },
+          { address: addr, abi: V3_POOL_ABI, functionName: 'token1' },
+        )
+      })
+      try {
+        const results = await client.multicall({ allowFailure: true, contracts: calls })
+        missingV3.forEach((addr, i) => {
+          const base = i * 4
+          const slotRes = results[base]
+          const liqRes = results[base + 1]
+          const t0Res = results[base + 2]
+          const t1Res = results[base + 3]
+          if (slotRes?.status === 'success' && liqRes?.status === 'success' && t0Res?.status === 'success' && t1Res?.status === 'success') {
+            const slotData = slotRes.result as readonly [bigint, number, number, number, number, number, boolean]
+            v3DataMap.set(addr.toLowerCase(), {
+              sqrtPriceX96: slotData[0],
+              tick: Number(slotData[1]),
+              liquidity: liqRes.result as bigint,
+              token0: normalizeAddress(t0Res.result as Address),
+              token1: normalizeAddress(t1Res.result as Address),
+            })
+          }
+        })
+      } catch {}
+    }
+
+    for (const dp of discoveredPools) {
+      const [tokenA, tokenB] = pairs[dp.pairIdx]!
+      const key = pairKey(tokenA.address, tokenB.address)
+      const addrKey = dp.poolAddress.toLowerCase()
+
+      let node: PoolNode | null = null
+
+      if (dp.type === 'v2') {
+        const data = v2DataMap.get(addrKey)
+        if (!data) continue
+        if (data.reserve0 < this.config.minV2ReserveThreshold && data.reserve1 < this.config.minV2ReserveThreshold) continue
+        node = {
+          poolAddress: dp.poolAddress,
+          dex: dp.dex,
+          version: 'v2',
+          fee: 0,
+          token0: data.token0,
+          token1: sameAddress(data.token0, tokenA.address) ? tokenB.address : tokenA.address,
+          reserve0: data.reserve0,
+          reserve1: data.reserve1,
+          sqrtPriceX96: 0n,
+          tick: 0,
+          liquidity: 0n,
+        }
+      } else {
+        const data = v3DataMap.get(addrKey)
+        if (!data) continue
+        if (data.liquidity < this.config.minV3LiquidityThreshold) continue
+        node = {
+          poolAddress: dp.poolAddress,
+          dex: dp.dex,
+          version: 'v3',
+          fee: dp.fee,
+          token0: data.token0,
+          token1: data.token1,
+          reserve0: 0n,
+          reserve1: 0n,
+          sqrtPriceX96: data.sqrtPriceX96,
+          tick: data.tick,
+          liquidity: data.liquidity,
+        }
+      }
+
+      if (!graph.has(key)) graph.set(key, [])
+      graph.get(key)!.push(node)
+    }
+
+    console.log(`[PoolDiscovery] Built pool graph: ${pairs.length} pairs, ${discoveredPools.length} pools discovered, ${[...graph.values()].reduce((s, v) => s + v.length, 0)} nodes`)
+    return graph
+  }
+
+  private computeLocalQuotes(
+    chain: ChainConfig,
+    graph: PoolGraph,
+    tokenIn: TokenMetadata,
+    tokenOut: TokenMetadata,
+    amountIn: bigint,
+    gasPriceWei: bigint | null,
+  ): PriceQuote[] {
+    const key = pairKey(tokenIn.address, tokenOut.address)
+    const pools = graph.get(key)
+    if (!pools || pools.length === 0) return []
+
+    const quotes: PriceQuote[] = []
+
+    for (const node of pools) {
+      try {
+        if (node.version === 'v2') {
+          const isToken0In = sameAddress(node.token0, tokenIn.address)
+          const reserveIn = isToken0In ? node.reserve0 : node.reserve1
+          const reserveOut = isToken0In ? node.reserve1 : node.reserve0
+
+          if (reserveIn < this.config.minV2ReserveThreshold || reserveOut < this.config.minV2ReserveThreshold) continue
+
+          const amountOut = getV2AmountOut(amountIn, reserveIn, reserveOut)
+          if (amountOut <= 0n) continue
+
+          const midPriceQ18 = computeMidPriceQ18FromReserves(node.dex.protocol, reserveIn, reserveOut, tokenIn.decimals, tokenOut.decimals)
+          const executionPriceQ18 = computeExecutionPriceQ18(amountIn, amountOut, tokenIn.decimals, tokenOut.decimals)
+          const priceImpactBps = computePriceImpactBps(midPriceQ18, amountIn, amountOut, tokenIn.decimals, tokenOut.decimals)
+
+          const hopVersions: RouteHopVersion[] = ['v2']
+          const estimatedGasUnits = estimateGasForRoute(hopVersions)
+          const estimatedGasCostWei = gasPriceWei ? estimatedGasUnits * gasPriceWei : null
+
+          quotes.push({
+            chain: chain.key,
+            amountIn,
+            amountOut,
+            priceQ18: executionPriceQ18,
+            executionPriceQ18,
+            midPriceQ18,
+            priceImpactBps,
+            path: [tokenIn, tokenOut],
+            routeAddresses: [tokenIn.address, tokenOut.address],
+            sources: [{
+              dexId: node.dex.id,
+              poolAddress: node.poolAddress,
+              amountIn,
+              amountOut,
+              reserves: {
+                reserve0: node.reserve0,
+                reserve1: node.reserve1,
+                token0: node.token0,
+                token1: node.token1,
+              },
+            }],
+            liquidityScore: reserveIn + reserveOut,
+            hopVersions,
+            estimatedGasUnits,
+            estimatedGasCostWei,
+            gasPriceWei,
+          })
+        } else {
+          const zeroForOne = sameAddress(node.token0, tokenIn.address)
+          const amountOut = estimateV3AmountOut(node.sqrtPriceX96, node.liquidity, amountIn, node.fee, zeroForOne)
+          if (amountOut <= 0n) continue
+
+          const midPriceQ18 = computeV3MidPriceQ18FromSqrtPrice(node.sqrtPriceX96, zeroForOne, tokenIn.decimals, tokenOut.decimals)
+          const executionPriceQ18 = computeExecutionPriceQ18(amountIn, amountOut, tokenIn.decimals, tokenOut.decimals)
+          const priceImpactBps = computePriceImpactBps(midPriceQ18, amountIn, amountOut, tokenIn.decimals, tokenOut.decimals)
+
+          const hopVersions: RouteHopVersion[] = ['v3']
+          const estimatedGasUnits = estimateGasForRoute(hopVersions)
+          const estimatedGasCostWei = gasPriceWei ? estimatedGasUnits * gasPriceWei : null
+
+          quotes.push({
+            chain: chain.key,
+            amountIn,
+            amountOut,
+            priceQ18: executionPriceQ18,
+            executionPriceQ18,
+            midPriceQ18,
+            priceImpactBps,
+            path: [tokenIn, tokenOut],
+            routeAddresses: [tokenIn.address, tokenOut.address],
+            sources: [{
+              dexId: node.dex.id,
+              poolAddress: node.poolAddress,
+              feeTier: node.fee,
+              amountIn,
+              amountOut,
+              reserves: {
+                liquidity: node.liquidity,
+                sqrtPriceX96: node.sqrtPriceX96,
+                tick: node.tick,
+                token0: node.token0,
+                token1: node.token1,
+              },
+            }],
+            liquidityScore: node.liquidity,
+            hopVersions,
+            estimatedGasUnits,
+            estimatedGasCostWei,
+            gasPriceWei,
+          })
+        }
+      } catch {
+        continue
+      }
+    }
+
+    return quotes
+  }
+
+  private async batchValidateRoutes(
+    candidates: PriceQuote[],
+    chain: ChainConfig,
+    client: PublicClient,
+    gasPriceWei: bigint | null,
+  ): Promise<PriceQuote[]> {
+    if (candidates.length === 0) return []
+
+    const hasAnyV3 = candidates.some((q) => q.hopVersions.some((v) => v === 'v3'))
+    if (!hasAnyV3) return candidates
+
+    const maxHops = Math.max(...candidates.map((q) => q.sources.length))
+    const rollingAmounts = candidates.map((q) => q.amountIn)
+    const validatedSources: (PriceSource | null)[][] = candidates.map(() => [])
+    const failed = new Set<number>()
+
+    for (let hopPos = 0; hopPos < maxHops; hopPos++) {
+      const v3Batch: { routeIdx: number; call: any }[] = []
+
+      for (let routeIdx = 0; routeIdx < candidates.length; routeIdx++) {
+        if (failed.has(routeIdx)) continue
+        const quote = candidates[routeIdx]!
+        if (hopPos >= quote.sources.length) continue
+
+        const source = quote.sources[hopPos]!
+        const hopVersion = quote.hopVersions[hopPos]!
+        const hopAmountIn = rollingAmounts[routeIdx]!
+        const hopTokenIn = quote.path[hopPos]!
+
+        if (hopVersion === 'v2') {
+          if (!source.reserves?.token0 || source.reserves.reserve0 === undefined || source.reserves.reserve1 === undefined) {
+            failed.add(routeIdx)
+            continue
+          }
+          const isToken0In = hopTokenIn.address.toLowerCase() === source.reserves.token0.toLowerCase()
+          const reserveIn = isToken0In ? source.reserves.reserve0 : source.reserves.reserve1
+          const reserveOut = isToken0In ? source.reserves.reserve1 : source.reserves.reserve0
+          const amountOut = getV2AmountOut(hopAmountIn, reserveIn, reserveOut)
+          if (amountOut <= 0n) { failed.add(routeIdx); continue }
+
+          validatedSources[routeIdx]!.push({ ...source, amountIn: hopAmountIn, amountOut })
+          rollingAmounts[routeIdx] = amountOut
+        } else {
+          const dex = chain.dexes.find((d) => d.id === source.dexId)
+          if (!dex?.quoterAddress) { failed.add(routeIdx); continue }
+
+          const hopTokenOut = quote.path[hopPos + 1]!
+          v3Batch.push({
+            routeIdx,
+            call: {
+              address: dex.quoterAddress,
+              abi: V3_QUOTER_ABI,
+              functionName: 'quoteExactInputSingle',
+              args: [{
+                tokenIn: hopTokenIn.address,
+                tokenOut: hopTokenOut.address,
+                amountIn: hopAmountIn,
+                fee: source.feeTier ?? 0,
+                sqrtPriceLimitX96: 0n,
+              }],
+            },
+          })
+        }
+      }
+
+      if (v3Batch.length > 0) {
+        try {
+          const results = await client.multicall({
+            allowFailure: true,
+            contracts: v3Batch.map((b) => b.call),
+          })
+
+          for (let i = 0; i < v3Batch.length; i++) {
+            const { routeIdx } = v3Batch[i]!
+            const result = results[i]
+            const source = candidates[routeIdx]!.sources[hopPos]!
+
+            if (!result || result.status !== 'success') {
+              failed.add(routeIdx)
+              continue
+            }
+
+            const [amountOut] = result.result as readonly [bigint, bigint, number, bigint]
+            if (amountOut <= 0n) { failed.add(routeIdx); continue }
+
+            validatedSources[routeIdx]!.push({ ...source, amountIn: rollingAmounts[routeIdx]!, amountOut })
+            rollingAmounts[routeIdx] = amountOut
+          }
+        } catch {
+          v3Batch.forEach(({ routeIdx }) => failed.add(routeIdx))
+        }
+      }
+    }
+
+    const validated: PriceQuote[] = []
+    for (let routeIdx = 0; routeIdx < candidates.length; routeIdx++) {
+      if (failed.has(routeIdx)) continue
+      const original = candidates[routeIdx]!
+      const sources = validatedSources[routeIdx]!.filter((s): s is PriceSource => s !== null)
+      if (sources.length !== original.sources.length) continue
+
+      const finalAmountOut = rollingAmounts[routeIdx]!
+      if (finalAmountOut <= 0n) continue
+
+      const firstToken = original.path[0]!
+      const lastToken = original.path[original.path.length - 1]!
+      const executionPriceQ18 = computeExecutionPriceQ18(original.amountIn, finalAmountOut, firstToken.decimals, lastToken.decimals)
+      const priceImpactBps = computePriceImpactBps(original.midPriceQ18, original.amountIn, finalAmountOut, firstToken.decimals, lastToken.decimals)
+      const estimatedGasUnits = estimateGasForRoute(original.hopVersions)
+      const gp = gasPriceWei ?? original.gasPriceWei
+      const estimatedGasCostWei = gp ? estimatedGasUnits * gp : null
+
+      validated.push({
+        ...original,
+        amountOut: finalAmountOut,
+        priceQ18: executionPriceQ18,
+        executionPriceQ18,
+        priceImpactBps,
+        sources,
+        estimatedGasUnits,
+        estimatedGasCostWei,
+      })
+    }
+
+    return validated
+  }
+
   async fetchMultiHopQuotes(
     chain: ChainConfig,
     tokenIn: TokenMetadata,
@@ -403,10 +901,13 @@ export class PoolDiscovery {
       validCandidates as Address[]
     )
 
-    const intermediateByAddress = new Map<string, TokenMetadata>()
-    for (const t of intermediateTokens) {
-      intermediateByAddress.set(t.address.toLowerCase(), t)
-    }
+    // Phase 1: Build pool graph for all relevant tokens — 3 RPC calls max
+    const allTokens = [tokenIn, tokenOut, ...intermediateTokens]
+    const graph = await this.buildPoolGraph(chain, allTokens, client, allowedVersions)
+
+    // Phase 2: Iterative deepening on local graph — 0 RPC calls
+    const VALIDATION_TOP_K = 10
+    const MAX_PARTIALS_PER_DEPTH = 5
 
     interface PartialRoute {
       path: TokenMetadata[]
@@ -420,22 +921,13 @@ export class PoolDiscovery {
       gasPriceWei: bigint | null
     }
 
-    const MAX_PARTIALS_PER_DEPTH = 5
     const results: PriceQuote[] = []
 
-    // Depth-1: tokenIn → intermediate
-    const legAQuotesArray = await Promise.all(
-      intermediateTokens.map((intermediate) =>
-        this.fetchDirectQuotes(chain, tokenIn, intermediate, amountIn, gasPriceWei, client, allowedVersions)
-      )
-    )
-
     let partials: PartialRoute[] = []
-    for (let i = 0; i < intermediateTokens.length; i++) {
-      const intermediate = intermediateTokens[i]!
-      const legQuotes = legAQuotesArray[i]!
+    for (const intermediate of intermediateTokens) {
+      const legQuotes = this.computeLocalQuotes(chain, graph, tokenIn, intermediate, amountIn, gasPriceWei)
       for (const leg of legQuotes) {
-        if (!leg || leg.amountOut === 0n) continue
+        if (leg.amountOut === 0n) continue
         partials.push({
           path: [tokenIn, intermediate],
           sources: [...leg.sources],
@@ -450,23 +942,14 @@ export class PoolDiscovery {
       }
     }
 
-    // Try closing each partial → tokenOut at every depth
     for (let depth = 1; depth <= maxDepth; depth++) {
       if (partials.length === 0) break
 
-      // Close attempt: partial.lastToken → tokenOut
-      const closingQuotesArray = await Promise.all(
-        partials.map((p) => {
-          const lastToken = p.path[p.path.length - 1]!
-          return this.fetchDirectQuotes(chain, lastToken, tokenOut, p.amountOut, gasPriceWei, client, allowedVersions)
-        })
-      )
-
-      for (let i = 0; i < partials.length; i++) {
-        const partial = partials[i]!
-        const closingLegs = closingQuotesArray[i]!
+      for (const partial of partials) {
+        const lastToken = partial.path[partial.path.length - 1]!
+        const closingLegs = this.computeLocalQuotes(chain, graph, lastToken, tokenOut, partial.amountOut, gasPriceWei)
         for (const leg of closingLegs) {
-          if (!leg || leg.amountOut === 0n) continue
+          if (leg.amountOut === 0n) continue
 
           const allMids = [...partial.midPrices, leg.midPriceQ18]
           const allExecs = [...partial.execPrices, leg.executionPriceQ18]
@@ -496,14 +979,12 @@ export class PoolDiscovery {
         }
       }
 
-      // If we haven't reached max depth, expand partials by one more intermediate
       if (depth < maxDepth) {
-        // Prune partials to top-K by amountOut
         partials.sort((a, b) => (a.amountOut > b.amountOut ? -1 : 1))
         const pruned = partials.slice(0, MAX_PARTIALS_PER_DEPTH)
 
         const nextPartials: PartialRoute[] = []
-        const expansionPromises = pruned.map((partial) => {
+        for (const partial of pruned) {
           const lastToken = partial.path[partial.path.length - 1]!
           const visitedAddresses = new Set(partial.path.map((t) => t.address.toLowerCase()))
 
@@ -511,22 +992,10 @@ export class PoolDiscovery {
             (t) => !visitedAddresses.has(t.address.toLowerCase()) && !sameAddress(t.address, tokenOut.address)
           )
 
-          if (expandTargets.length === 0) return Promise.resolve([])
-
-          return Promise.all(
-            expandTargets.map((target) =>
-              this.fetchDirectQuotes(chain, lastToken, target, partial.amountOut, gasPriceWei, client, allowedVersions)
-                .then((quotes) => ({ target, quotes, partial }))
-            )
-          )
-        })
-
-        const expansionResults = await Promise.all(expansionPromises)
-        for (const results of expansionResults) {
-          if (!results || !Array.isArray(results)) continue
-          for (const { target, quotes, partial } of results) {
-            for (const leg of quotes) {
-              if (!leg || leg.amountOut === 0n) continue
+          for (const target of expandTargets) {
+            const legQuotes = this.computeLocalQuotes(chain, graph, lastToken, target, partial.amountOut, gasPriceWei)
+            for (const leg of legQuotes) {
+              if (leg.amountOut === 0n) continue
               nextPartials.push({
                 path: [...partial.path, target],
                 sources: [...partial.sources, ...leg.sources],
@@ -546,7 +1015,25 @@ export class PoolDiscovery {
       }
     }
 
-    console.log(`[PoolDiscovery] Found ${results.length} multi-hop quotes for ${tokenIn.symbol} -> ${tokenOut.symbol}`)
-    return results
+    // Phase 3: Validate top-K routes with V3 hops via batched quoter — 1 RPC per hop depth
+    if (results.length === 0) {
+      console.log(`[PoolDiscovery] No multi-hop routes found for ${tokenIn.symbol} -> ${tokenOut.symbol}`)
+      return []
+    }
+
+    const hasV3Hop = (q: PriceQuote) => q.hopVersions.some((v) => v === 'v3')
+    const v2OnlyRoutes = results.filter((r) => !hasV3Hop(r))
+    const v3Routes = results.filter(hasV3Hop)
+
+    let validatedV3: PriceQuote[] = []
+    if (v3Routes.length > 0) {
+      v3Routes.sort((a, b) => (a.amountOut > b.amountOut ? -1 : 1))
+      const topV3 = v3Routes.slice(0, VALIDATION_TOP_K)
+      validatedV3 = await this.batchValidateRoutes(topV3, chain, client, gasPriceWei)
+    }
+
+    const allRoutes = [...v2OnlyRoutes, ...validatedV3]
+    console.log(`[PoolDiscovery] Found ${allRoutes.length} multi-hop quotes for ${tokenIn.symbol} -> ${tokenOut.symbol} (${v2OnlyRoutes.length} V2-only, ${validatedV3.length} V3-validated)`)
+    return allRoutes
   }
 }
