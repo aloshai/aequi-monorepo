@@ -100,6 +100,16 @@ export const V3_ROUTER02_ABI = [
     ],
     outputs: [{ name: 'amountOut', type: 'uint256' }],
   },
+  {
+    type: 'function',
+    name: 'multicall',
+    stateMutability: 'payable',
+    inputs: [
+      { name: 'deadline', type: 'uint256' },
+      { name: 'data', type: 'bytes[]' },
+    ],
+    outputs: [{ name: 'results', type: 'bytes[]' }],
+  },
 ] as const satisfies Abi
 
 export const V3_QUOTER_ABI = [

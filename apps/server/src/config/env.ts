@@ -3,49 +3,40 @@ import { z } from 'zod';
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
-  
-  // RPC URLs - at least one required
-  ETHEREUM_RPC_URL: z.string().url().optional(),
-  ETHEREUM_RPC_URL_2: z.string().url().optional(),
-  ETHEREUM_RPC_URL_3: z.string().url().optional(),
-  
-  BSC_RPC_URL: z.string().url().optional(),
-  BSC_RPC_URL_2: z.string().url().optional(),
-  BSC_RPC_URL_3: z.string().url().optional(),
-  
-  POLYGON_RPC_URL: z.string().url().optional(),
-  POLYGON_RPC_URL_2: z.string().url().optional(),
-  POLYGON_RPC_URL_3: z.string().url().optional(),
-  
-  ARBITRUM_RPC_URL: z.string().url().optional(),
-  ARBITRUM_RPC_URL_2: z.string().url().optional(),
-  ARBITRUM_RPC_URL_3: z.string().url().optional(),
-  
-  OPTIMISM_RPC_URL: z.string().url().optional(),
-  OPTIMISM_RPC_URL_2: z.string().url().optional(),
-  OPTIMISM_RPC_URL_3: z.string().url().optional(),
-  
-  BASE_RPC_URL: z.string().url().optional(),
-  BASE_RPC_URL_2: z.string().url().optional(),
-  BASE_RPC_URL_3: z.string().url().optional(),
-  
-  AVALANCHE_RPC_URL: z.string().url().optional(),
-  AVALANCHE_RPC_URL_2: z.string().url().optional(),
-  AVALANCHE_RPC_URL_3: z.string().url().optional(),
+  HOST: z.string().default('0.0.0.0'),
+
+  // RPC URLs (comma-separated lists)
+  RPC_URL_ETH: z.string().optional(),
+  RPC_URL_ETH_FALLBACK: z.string().optional(),
+  BSC_RPC_URL: z.string().optional(),
+  BSC_RPC_URL_FALLBACK: z.string().optional(),
 
   // Rate limiting
-  RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
-  RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60000),
+  RATE_LIMIT_MAX: z.coerce.number().int().positive().default(120),
+  RATE_LIMIT_WINDOW: z.string().default('1 minute'),
 
   // CORS
-  CORS_ORIGIN: z.string().default('*'),
+  CORS_ORIGIN: z.string().optional(),
 
   // Logging
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 
-  // Cache TTL (seconds)
-  QUOTE_TTL_SECONDS: z.coerce.number().int().positive().default(30),
-  TOKEN_METADATA_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
+  // DEX overrides
+  UNISWAP_V2_FACTORY: z.string().optional(),
+  UNISWAP_V2_ROUTER: z.string().optional(),
+
+  // Executor
+  AEQUI_EXECUTOR_ETH: z.string().optional(),
+  AEQUI_EXECUTOR_BSC: z.string().optional(),
+  EXECUTOR_INTERHOP_BUFFER_BPS: z.coerce.number().int().min(0).default(10),
+
+  // Swap
+  SWAP_QUOTE_TTL_SECONDS: z.coerce.number().int().positive().default(15),
+
+  // Routing
+  MAX_HOP_DEPTH: z.coerce.number().int().min(1).max(4).default(2),
+  ENABLE_SPLIT_ROUTING: z.string().default('true'),
+  MAX_SPLIT_LEGS: z.coerce.number().int().min(2).max(5).default(3),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -53,23 +44,14 @@ export type Env = z.infer<typeof envSchema>;
 export function validateEnv(): Env {
   try {
     const env = envSchema.parse(process.env);
-    
-    // Custom validation: at least one RPC URL must be provided
-    const hasAnyRpc = 
-      env.ETHEREUM_RPC_URL ||
-      env.BSC_RPC_URL ||
-      env.POLYGON_RPC_URL ||
-      env.ARBITRUM_RPC_URL ||
-      env.OPTIMISM_RPC_URL ||
-      env.BASE_RPC_URL ||
-      env.AVALANCHE_RPC_URL;
-    
+
+    const hasAnyRpc = env.RPC_URL_ETH || env.BSC_RPC_URL;
     if (!hasAnyRpc) {
       throw new Error(
-        'At least one RPC URL must be configured (e.g., ETHEREUM_RPC_URL, BSC_RPC_URL, etc.)'
+        'At least one RPC URL must be configured (RPC_URL_ETH or BSC_RPC_URL)'
       );
     }
-    
+
     return env;
   } catch (error) {
     if (error instanceof z.ZodError) {

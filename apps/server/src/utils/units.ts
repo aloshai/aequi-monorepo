@@ -1,6 +1,8 @@
 import { formatUnits } from 'viem'
 export { defaultAmountForDecimals, descaleFromQ18 } from '@aequi/pricing'
 
+const MAX_UINT256 = (1n << 256n) - 1n
+
 export const parseAmountToUnits = (value: string, decimals: number): bigint => {
   const trimmed = value.trim()
   if (!trimmed) {
@@ -19,8 +21,11 @@ export const parseAmountToUnits = (value: string, decimals: number): bigint => {
   const normalizedFraction = fraction.padEnd(decimals, '0')
   const normalized = `${whole}${normalizedFraction}`.replace(/^0+/, '')
   const units = normalized.length ? normalized : '0'
-
-  return BigInt(units)
+  const result = BigInt(units)
+  if (result > MAX_UINT256) {
+    throw new Error('Amount exceeds maximum uint256 value')
+  }
+  return result
 }
 
 export const formatAmountFromUnits = (value: bigint, decimals: number): string => {

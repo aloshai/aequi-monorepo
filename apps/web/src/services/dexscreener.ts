@@ -59,37 +59,42 @@ export async function searchTokens(query: string): Promise<Token[]> {
         }
         const data: DexScreenerSearchResponse = await response.json()
 
-        // Deduplicate tokens by address
-        const tokensMap = new Map<string, Token>()
+        const tokensMap = new Map<string, { pair: DexScreenerPair; chain: ChainKey; chainId: number }>()
 
         if (data.pairs) {
             for (const pair of data.pairs) {
-                if (!tokensMap.has(pair.baseToken.address.toLowerCase())) {
+                const key = pair.baseToken.address.toLowerCase()
+                if (!tokensMap.has(key)) {
                     const chain: ChainKey = pair.chainId === 'bsc' ? 'bsc' : 'ethereum'
                     const chainId = pair.chainId === 'bsc' ? 56 : 1
-
-                    let decimals = 18
-                    try {
-                        const meta = await fetchTokenMetadata({ chain, address: pair.baseToken.address })
-                        decimals = meta.token.decimals
-                    } catch {
-                        // fallback to 18 if server is unavailable
-                    }
-
-                    tokensMap.set(pair.baseToken.address.toLowerCase(), {
-                        address: pair.baseToken.address,
-                        symbol: pair.baseToken.symbol,
-                        name: pair.baseToken.name,
-                        decimals,
-                        chainId,
-                        logoURI: `https://dd.dexscreener.com/ds-data/tokens/${pair.chainId}/${pair.baseToken.address}.png`,
-                        isImported: true
-                    })
+                    tokensMap.set(key, { pair, chain, chainId })
                 }
             }
         }
 
-        return Array.from(tokensMap.values())
+        const entries = Array.from(tokensMap.values())
+        if (entries.length === 0) return []
+
+        const metadataResults = await Promise.allSettled(
+            entries.map(({ chain, pair }) =>
+                fetchTokenMetadata({ chain, address: pair.baseToken.address })
+            )
+        )
+
+        return entries.map(({ pair, chain, chainId }, idx) => {
+            const result = metadataResults[idx]
+            const decimals = result?.status === 'fulfilled' ? result.value.token.decimals : 18
+
+            return {
+                address: pair.baseToken.address,
+                symbol: pair.baseToken.symbol,
+                name: pair.baseToken.name,
+                decimals,
+                chainId,
+                logoURI: `https://dd.dexscreener.com/ds-data/tokens/${chain === 'bsc' ? 'bsc' : pair.chainId}/${pair.baseToken.address}.png`,
+                isImported: true,
+            }
+        })
     } catch (error) {
         console.error('DexScreener search error:', error)
         return []

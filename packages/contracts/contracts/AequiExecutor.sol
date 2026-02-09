@@ -107,6 +107,7 @@ contract AequiExecutor is Ownable2Step, Pausable, ReentrancyGuard {
                 uint256 injectedAmount = IERC20(c.injectToken).balanceOf(address(this));
                 if (injectedAmount == 0) revert ZeroAmountInjection();
 
+                if (c.injectOffset < 4) revert InvalidInjectionOffset(c.injectOffset, data.length);
                 if (c.injectOffset + 32 > data.length) revert InvalidInjectionOffset(c.injectOffset, data.length);
 
                 uint256 offset = c.injectOffset;

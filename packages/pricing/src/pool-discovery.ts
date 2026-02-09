@@ -659,7 +659,7 @@ export class PoolDiscovery {
 
           if (reserveIn < this.config.minV2ReserveThreshold || reserveOut < this.config.minV2ReserveThreshold) continue
 
-          const amountOut = getV2AmountOut(amountIn, reserveIn, reserveOut)
+          const amountOut = getV2AmountOut(amountIn, reserveIn, reserveOut, node.dex.protocol)
           if (amountOut <= 0n) continue
 
           const midPriceQ18 = computeMidPriceQ18FromReserves(node.dex.protocol, reserveIn, reserveOut, tokenIn.decimals, tokenOut.decimals)
@@ -787,7 +787,8 @@ export class PoolDiscovery {
           const isToken0In = hopTokenIn.address.toLowerCase() === source.reserves.token0.toLowerCase()
           const reserveIn = isToken0In ? source.reserves.reserve0 : source.reserves.reserve1
           const reserveOut = isToken0In ? source.reserves.reserve1 : source.reserves.reserve0
-          const amountOut = getV2AmountOut(hopAmountIn, reserveIn, reserveOut)
+          const dex = chain.dexes.find((d) => d.id === source.dexId)
+          const amountOut = getV2AmountOut(hopAmountIn, reserveIn, reserveOut, dex?.protocol)
           if (amountOut <= 0n) { failed.add(routeIdx); continue }
 
           validatedSources[routeIdx]!.push({ ...source, amountIn: hopAmountIn, amountOut })

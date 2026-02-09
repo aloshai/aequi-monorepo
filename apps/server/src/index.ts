@@ -21,6 +21,9 @@ import { appConfig } from './config/app-config'
 import { ExchangeService } from './services/exchange/exchange-service'
 import { TokenService, PriceService, PoolDiscovery } from '@aequi/pricing'
 import { registerDefaultAdapters } from '@aequi/dex-adapters'
+import { errorHandler } from './middleware/error-handler'
+import { requestIdHook } from './middleware/request-id'
+import { loggerConfig } from './config/logger'
 import { QuoteService } from './services/quote/quote-service'
 import { AllowanceService } from './services/tokens/allowance-service'
 import { SwapBuilder } from '@aequi/core'
@@ -28,6 +31,7 @@ import { formatAmountFromUnits, parseAmountToUnits } from './utils/units'
 import { DefaultChainClientProvider } from './services/clients/default-chain-client-provider'
 import { normalizeAddress } from './utils/trading'
 import { HealthService } from './services/health/health-service'
+import { TtlCache } from './utils/ttl-cache'
 import type { ChainConfig, PriceQuote, QuoteResult, RoutePreference, TokenMetadata } from './types'
 
 // Register default DEX adapters
@@ -46,6 +50,7 @@ const priceService = new PriceService(tokenService, chainClientProvider, poolDis
     appConfig.routing.enableSplitRouting ? { maxSplitLegs: appConfig.routing.maxSplitLegs } : null,
 )
 const quoteService = new QuoteService(tokenService, priceService)
+const quoteCache = new TtlCache<QuoteResult>(5_000)
 const allowanceService = new AllowanceService(tokenService, chainClientProvider)
 const swapBuilder = new SwapBuilder({
     executorByChain: AEQUI_EXECUTOR_ADDRESS,
@@ -157,10 +162,15 @@ const formatPriceQuote = (chain: ChainConfig, quote: PriceQuote, routePreference
 }
 export const buildServer = async () => {
     const app = Fastify({
-        logger: false,
+        logger: appConfig.server.loggerEnabled ? loggerConfig : false,
     })
 
-    await app.register(cors, { origin: true })
+    app.addHook('onRequest', requestIdHook)
+
+    const allowedOrigins = process.env.CORS_ORIGIN
+        ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+        : true
+    await app.register(cors, { origin: allowedOrigins })
     await app.register(rateLimit, {
         max: appConfig.rateLimit.max,
         timeWindow: appConfig.rateLimit.window,
@@ -485,20 +495,27 @@ export const buildServer = async () => {
         }
 
         let result: QuoteResult | null = null
-        try {
-            result = await quoteService.getQuote(
-                chain,
-                effectiveTokenA,
-                effectiveTokenB,
-                parsed.data.amount,
-                slippage,
-                routePreference,
-                forceMultiHop,
-                enableSplit,
-            )
-        } catch (error) {
-            reply.status(400)
-            return { error: 'invalid_request', message: (error as Error).message }
+        const cacheKey = `${chain.key}:${effectiveTokenA}:${effectiveTokenB}:${parsed.data.amount}:${routePreference}:${forceMultiHop}:${enableSplit}`
+        const cached = quoteCache.get(cacheKey)
+        if (cached) {
+            result = cached
+        } else {
+            try {
+                result = await quoteService.getQuote(
+                    chain,
+                    effectiveTokenA,
+                    effectiveTokenB,
+                    parsed.data.amount,
+                    slippage,
+                    routePreference,
+                    forceMultiHop,
+                    enableSplit,
+                )
+                if (result) quoteCache.set(cacheKey, result)
+            } catch (error) {
+                reply.status(400)
+                return { error: 'invalid_request', message: (error as Error).message }
+            }
         }
 
         if (!result) {
@@ -523,20 +540,16 @@ export const buildServer = async () => {
         const bodySchema = z.object({
             chain: z.string().min(1),
             tokenA: z.string().trim().refine((value) => {
-                const valid = isAddress(value, { strict: false }) || value.toLowerCase() === NATIVE_ADDRESS.toLowerCase()
-                if (!valid) console.log(`[Validation Failed] tokenA: "${value}" (len: ${value.length})`)
-                return valid
+                return isAddress(value, { strict: false }) || value.toLowerCase() === NATIVE_ADDRESS.toLowerCase()
             }, 'Invalid tokenA address'),
             tokenB: z.string().trim().refine((value) => {
-                const valid = isAddress(value, { strict: false }) || value.toLowerCase() === NATIVE_ADDRESS.toLowerCase()
-                if (!valid) console.log(`[Validation Failed] tokenB: "${value}" (len: ${value.length})`)
-                return valid
+                return isAddress(value, { strict: false }) || value.toLowerCase() === NATIVE_ADDRESS.toLowerCase()
             }, 'Invalid tokenB address'),
             amount: z.string().min(1, 'Amount is required'),
-            slippageBps: z.coerce.number().optional(),
+            slippageBps: z.coerce.number().min(0).max(10000).optional(),
             version: z.enum(['auto', 'v2', 'v3']).optional(),
             recipient: z.string().refine((value) => isAddress(value, { strict: false }), 'Invalid recipient address'),
-            deadlineSeconds: z.coerce.number().optional(),
+            deadlineSeconds: z.coerce.number().min(10).max(3600).optional(),
             forceMultiHop: z.boolean().optional(),
             enableSplit: z.boolean().optional(),
         })
@@ -585,7 +598,7 @@ export const buildServer = async () => {
         const forceMultiHop = parsed.data.forceMultiHop ?? false
         const enableSplit = parsed.data.enableSplit !== false
 
-        console.log(`[API] Swap request: ${effectiveTokenA} -> ${effectiveTokenB}, Amount: ${parsed.data.amount}`)
+        request.log.info({ tokenA: effectiveTokenA, tokenB: effectiveTokenB, amount: parsed.data.amount }, 'Swap request')
 
         let quoteResult: QuoteResult | null = null
         try {
@@ -709,34 +722,40 @@ export const buildServer = async () => {
         }
     })
 
-    app.setErrorHandler((error, request, reply) => {
-        console.error(error)
-        request.log.error(error)
-        reply.status(500).send({ error: 'internal_error', message: 'Unexpected server error' })
-    })
+    app.setErrorHandler(errorHandler)
 
     return app
 }
 
 export const startServer = async () => {
-    // Validate environment variables on startup
     try {
         validateEnv()
-        console.log('✓ Environment variables validated')
     } catch (error) {
-        console.error('❌ Environment validation failed:')
-        console.error((error as Error).message)
+        console.error('Environment validation failed:', (error as Error).message)
         process.exit(1)
     }
 
-    console.log('Starting server with Native Token support...')
     const app = await buildServer()
     const port = appConfig.server.port
     const host = appConfig.server.host
 
+    const shutdown = async (signal: string) => {
+        app.log.info(`Received ${signal}, shutting down gracefully...`)
+        try {
+            await app.close()
+            process.exit(0)
+        } catch (err) {
+            app.log.error(err, 'Error during shutdown')
+            process.exit(1)
+        }
+    }
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'))
+    process.on('SIGINT', () => shutdown('SIGINT'))
+
     try {
         await app.listen({ port, host })
-        console.log(`✓ Server listening on ${host}:${port}`)
+        app.log.info(`Server listening on ${host}:${port}`)
         return app
     } catch (error) {
         app.log.error(error)

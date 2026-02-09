@@ -5,10 +5,20 @@ import { clampSlippage } from '../../utils/trading'
 import { PriceService } from '@aequi/pricing'
 import { TokenService } from '@aequi/pricing'
 
+interface Logger {
+  info(msg: string): void
+  info(obj: object, msg: string): void
+  debug(msg: string): void
+  debug(obj: object, msg: string): void
+}
+
+const noop: Logger = { info() {}, debug() {} }
+
 export class QuoteService {
   constructor(
     private readonly tokenService: TokenService,
     private readonly priceService: PriceService,
+    private readonly logger: Logger = noop,
   ) {}
 
   async getQuote(
@@ -35,13 +45,13 @@ export class QuoteService {
       throw new Error('Amount must be greater than zero')
     }
 
-    console.log(`[QuoteService] Requesting quote for ${tokenIn.symbol} -> ${tokenOut.symbol} (Amount: ${amountIn})`)
+    this.logger.info({ pair: `${tokenIn.symbol}->${tokenOut.symbol}`, amountIn: amountIn.toString() }, 'Requesting quote')
     const quote = await this.priceService.getBestQuoteForTokens(chain, tokenIn, tokenOut, amountIn, preference, forceMultiHop, enableSplit)
     if (!quote) {
-      console.log('[QuoteService] No quote returned from PriceService')
+      this.logger.debug('No quote returned from PriceService')
       return null
     }
-    console.log(`[QuoteService] Quote received: ${quote.amountOut} out`)
+    this.logger.info({ amountOut: quote.amountOut.toString() }, 'Quote received')
 
     const boundedSlippage = clampSlippage(slippageBps)
     const slippageAmount = (quote.amountOut * BigInt(boundedSlippage)) / 10000n

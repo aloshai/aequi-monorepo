@@ -33,6 +33,9 @@ import { QuoteAnalysis } from './components/QuoteAnalysis'
 import { SettingsModal } from './components/SettingsModal'
 import { SwapConfirmModal } from './components/SwapConfirmModal'
 import { getTokenLogo } from './utils/logos'
+import { addSwapHistoryEntry, getSwapHistory, updateSwapHistoryStatus } from './services/swap-history'
+import type { SwapHistoryEntry } from './services/swap-history'
+import { parseSwapError } from './utils/swap-errors'
 
 type RoutePreference = 'auto' | 'v2' | 'v3'
 type DebugKey = 'exchange' | 'token' | 'price' | 'quote' | 'allowance' | 'approve' | 'swap'
@@ -53,6 +56,22 @@ const chainOptions: Array<{ key: ChainKey; label: string }> = [
 const CHAIN_ID_BY_KEY: Record<ChainKey, SupportedChainId> = {
   ethereum: CHAIN_BY_KEY.ethereum.id,
   bsc: CHAIN_BY_KEY.bsc.id,
+}
+
+const BLOCK_EXPLORER_BY_CHAIN: Record<ChainKey, string> = {
+  ethereum: 'https://etherscan.io',
+  bsc: 'https://bscscan.com',
+}
+
+const formatBigIntAmount = (value: bigint, decimals: number, precision = 6): string => {
+  if (value === 0n) return '0'
+  const divisor = 10n ** BigInt(decimals)
+  const whole = value / divisor
+  const remainder = value % divisor
+  if (remainder === 0n) return whole.toString()
+  const fracStr = remainder.toString().padStart(decimals, '0').slice(0, precision)
+  const trimmed = fracStr.replace(/0+$/, '')
+  return trimmed ? `${whole}.${trimmed}` : whole.toString()
 }
 
 const shorten = (value: string) => (value.length > 12 ? `${value.slice(0, 6)}…${value.slice(-4)}` : value)
@@ -191,6 +210,7 @@ function App() {
   const [swapExecutionError, setSwapExecutionError] = useState<string | null>(null)
   const [swapHash, setSwapHash] = useState<string | null>(null)
   const [lastSwapHash, setLastSwapHash] = useState<string | null>(null)
+  const [swapHistory, setSwapHistory] = useState<SwapHistoryEntry[]>(() => getSwapHistory())
 
   // Use unused variables to satisfy linter
   useEffect(() => {
@@ -306,27 +326,29 @@ function App() {
 
   const formattedBalanceA = useMemo(() => {
     if (!quoteForm.tokenA) return '0'
-    return (Number(balanceA) / 10 ** quoteForm.tokenA.decimals).toFixed(6)
+    return formatBigIntAmount(balanceA, quoteForm.tokenA.decimals)
   }, [balanceA, quoteForm.tokenA])
 
   const formattedBalanceB = useMemo(() => {
     if (!quoteForm.tokenB) return '0'
-    return (Number(balanceB) / 10 ** quoteForm.tokenB.decimals).toFixed(6)
+    return formatBigIntAmount(balanceB, quoteForm.tokenB.decimals)
   }, [balanceB, quoteForm.tokenB])
 
   const handleSetMaxAmount = useCallback(() => {
     if (!quoteForm.tokenA) return
-    const maxAmount = Number(balanceA) / 10 ** quoteForm.tokenA.decimals
-    // For native tokens, leave a bit for gas
-    const amountToSet = isNativeTokenA ? Math.max(0, maxAmount - 0.01) : maxAmount
-    setQuoteForm(prev => ({ ...prev, amount: amountToSet.toString() }))
+    if (isNativeTokenA) {
+      const gasBuffer = 10n ** BigInt(quoteForm.tokenA.decimals - 2)
+      const safeAmount = balanceA > gasBuffer ? balanceA - gasBuffer : 0n
+      setQuoteForm(prev => ({ ...prev, amount: formatBigIntAmount(safeAmount, quoteForm.tokenA!.decimals, 18) }))
+    } else {
+      setQuoteForm(prev => ({ ...prev, amount: formatBigIntAmount(balanceA, quoteForm.tokenA!.decimals, 18) }))
+    }
   }, [balanceA, quoteForm.tokenA, isNativeTokenA])
 
   const handleSetHalfAmount = useCallback(() => {
     if (!quoteForm.tokenA) return
-    const maxAmount = Number(balanceA) / 10 ** quoteForm.tokenA.decimals
-    const halfAmount = maxAmount / 2
-    setQuoteForm(prev => ({ ...prev, amount: halfAmount.toString() }))
+    const half = balanceA / 2n
+    setQuoteForm(prev => ({ ...prev, amount: formatBigIntAmount(half, quoteForm.tokenA!.decimals, 18) }))
   }, [balanceA, quoteForm.tokenA])
 
   // Pre-load exchange directory for debug/info purposes
@@ -508,6 +530,13 @@ function App() {
       setSwapExecutionError('Request a quote first')
       return
     }
+
+    const quoteAge = Date.now() - (quoteResult as unknown as SwapResponse).quoteTimestamp * 1000
+    if ('quoteTimestamp' in quoteResult && quoteAge > 60_000) {
+      setSwapExecutionError('Quote is stale — please refresh before swapping')
+      return
+    }
+
     if (!address || !isConnected) {
       setSwapExecutionError('Connect wallet to swap')
       return
@@ -639,7 +668,24 @@ function App() {
         gas: gasLimit,
       })
       setSwapHash(swapTxHash)
+
+      const tokenInSym = preparedSwap.tokens[0]?.symbol ?? '?'
+      const tokenOutSym = preparedSwap.tokens[preparedSwap.tokens.length - 1]?.symbol ?? '?'
+      addSwapHistoryEntry({
+        hash: swapTxHash,
+        chain: selectedChain,
+        tokenInSymbol: tokenInSym,
+        tokenOutSymbol: tokenOutSym,
+        amountIn: preparedSwap.amountInFormatted,
+        amountOut: preparedSwap.amountOutFormatted,
+        timestamp: Date.now(),
+        status: 'pending',
+      })
+      setSwapHistory(getSwapHistory())
+
       await waitForTransactionReceipt(wagmiConfig, { chainId: selectedChainId, hash: swapTxHash })
+      updateSwapHistoryStatus(swapTxHash, 'confirmed')
+      setSwapHistory(getSwapHistory())
       setSwapHash(null)
       setLastSwapHash(swapTxHash)
 
@@ -649,11 +695,17 @@ function App() {
       setSwapConfirmModalOpen(false)
       setPreparedSwap(null)
     } catch (error) {
-      const message = resolveApiErrorMessage(error)
       if (approvalLoading) {
+        const message = resolveApiErrorMessage(error)
         setApprovalError(message)
       } else {
+        const message = parseSwapError(error)
         setSwapExecutionError(message)
+        if (swapHash) {
+          updateSwapHistoryStatus(swapHash, 'failed')
+          setSwapHistory(getSwapHistory())
+          setLastSwapHash(swapHash)
+        }
       }
       setApprovalHash(null)
       setSwapHash(null)
@@ -834,7 +886,7 @@ function App() {
                   <input
                     className="token-amount-input"
                     placeholder="0"
-                    value={quoteResult ? (Number(quoteResult.amountOut) / 10 ** (quoteForm.tokenB?.decimals || 18)).toFixed(6) : ''}
+                    value={quoteResult ? formatBigIntAmount(BigInt(quoteResult.amountOut), quoteForm.tokenB?.decimals || 18) : ''}
                     readOnly
                   />
                 </div>
@@ -842,6 +894,7 @@ function App() {
             </div>
 
             {/* Debug Options */}
+            {import.meta.env.DEV && (
             <div className="debug-options" style={{ marginTop: '12px', padding: '12px', background: 'rgba(255,165,0,0.1)', borderRadius: '8px', border: '1px solid rgba(255,165,0,0.3)' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: '#ff9500' }}>
                 <input
@@ -856,6 +909,7 @@ function App() {
                 Test multi-hop routing by skipping direct routes
               </p>
             </div>
+            )}
 
             {walletError && (
               <div className="error-message">
@@ -872,18 +926,21 @@ function App() {
             {(prepareError || approvalError || swapExecutionError) && (
               <div className="error-message">
                 {prepareError || approvalError || swapExecutionError}
+                {swapExecutionError && lastSwapHash && (
+                  <> — <a href={`${BLOCK_EXPLORER_BY_CHAIN[selectedChain]}/tx/${lastSwapHash}`} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>View failed tx</a></>
+                )}
               </div>
             )}
 
             {approvalHash && (
               <div className="info-message">
-                Approving... <a href={`https://etherscan.io/tx/${approvalHash}`} target="_blank" rel="noreferrer">View on Explorer</a>
+                Approving... <a href={`${BLOCK_EXPLORER_BY_CHAIN[selectedChain]}/tx/${approvalHash}`} target="_blank" rel="noreferrer">View on Explorer</a>
               </div>
             )}
 
             {swapHash && (
               <div className="info-message">
-                Swapping... <a href={`https://etherscan.io/tx/${swapHash}`} target="_blank" rel="noreferrer">View on Explorer</a>
+                Swapping... <a href={`${BLOCK_EXPLORER_BY_CHAIN[selectedChain]}/tx/${swapHash}`} target="_blank" rel="noreferrer">View on Explorer</a>
               </div>
             )}
 
@@ -898,6 +955,27 @@ function App() {
                     swapExecutionLoading ? 'Swapping...' :
                       'Execute Swap'}
             </button>
+
+            {swapHistory.length > 0 && (
+              <div className="recent-txs" style={{ marginTop: '16px' }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>Recent Transactions</div>
+                {swapHistory.slice(0, 5).map((entry) => (
+                  <div key={entry.hash} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border-color)', fontSize: '12px' }}>
+                    <span style={{ color: 'var(--text-primary)' }}>
+                      {entry.amountIn} {entry.tokenInSymbol} → {entry.amountOut} {entry.tokenOutSymbol}
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ color: entry.status === 'confirmed' ? 'var(--success-color, #67c23a)' : entry.status === 'failed' ? 'var(--danger-color, #f56c6c)' : 'var(--text-secondary)', fontSize: '11px' }}>
+                        {entry.status === 'confirmed' ? '✓' : entry.status === 'failed' ? '✗' : '⏳'}
+                      </span>
+                      <a href={`${BLOCK_EXPLORER_BY_CHAIN[entry.chain as ChainKey] ?? BLOCK_EXPLORER_BY_CHAIN.ethereum}/tx/${entry.hash}`} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-color)', textDecoration: 'none', fontSize: '11px' }}>
+                        {entry.hash.slice(0, 6)}…{entry.hash.slice(-4)}
+                      </a>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* RIGHT PANEL - Quote Display & Details */}

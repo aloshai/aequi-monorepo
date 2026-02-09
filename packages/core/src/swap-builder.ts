@@ -457,7 +457,8 @@ export class SwapBuilder {
         }
 
         const isLastHopOfLeg = hopIdx === legQuote.sources.length - 1
-        const hopMinOut = isLastHopOfLeg ? legMinOut : 0n
+        const scaledHopExpectedOut = (source.amountOut * hopAmountIn) / quotedHopAmountIn
+        const hopMinOut = this.deriveHopMinOut(scaledHopExpectedOut, legMinOut, legQuote.amountOut, isLastHopOfLeg)
         const hopRecipient = executorAddress
 
         approvals.push({
@@ -507,7 +508,6 @@ export class SwapBuilder {
           value: 0n,
         })
 
-        const scaledHopExpectedOut = (source.amountOut * hopAmountIn) / quotedHopAmountIn
         availableAmount = scaledHopExpectedOut
       }
     }
@@ -669,7 +669,9 @@ export class SwapBuilder {
       throw new Error('Missing fee tier for V3 hop')
     }
 
-    // Router02 (Uniswap V3) uses different ABI without deadline in struct
+    // Router02 (Uniswap V3): no deadline in struct — deadline is enforced
+    // by the executor's atomic execution + server-side TTL expiry check.
+    // For standalone (non-executor) calls, use multicall(deadline, data[]) wrapper.
     if (useRouter02) {
       return encodeFunctionData({
         abi: V3_ROUTER02_ABI,

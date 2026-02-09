@@ -3,13 +3,30 @@ import { CurrencyAmount as UniCurrencyAmount, Token as UniToken } from '@uniswap
 import type { DexConfig, PriceQuote, PriceSource, RouteHopVersion } from '@aequi/core'
 import { Q18, multiplyQ18 } from './math'
 
-export const getV2AmountOut = (amountIn: bigint, reserveIn: bigint, reserveOut: bigint): bigint => {
+export const V2_FEE_NUMERATOR: Record<string, bigint> = {
+  uniswap: 997n,
+  pancakeswap: 9975n,
+}
+
+const V2_FEE_DENOMINATOR: Record<string, bigint> = {
+  uniswap: 1000n,
+  pancakeswap: 10000n,
+}
+
+export const getV2AmountOut = (
+  amountIn: bigint,
+  reserveIn: bigint,
+  reserveOut: bigint,
+  protocol: string = 'uniswap',
+): bigint => {
   if (amountIn === 0n || reserveIn === 0n || reserveOut === 0n) {
     return 0n
   }
-  const amountInWithFee = amountIn * 997n
+  const feeNum = V2_FEE_NUMERATOR[protocol] ?? 997n
+  const feeDen = V2_FEE_DENOMINATOR[protocol] ?? 1000n
+  const amountInWithFee = amountIn * feeNum
   const numerator = amountInWithFee * reserveOut
-  const denominator = reserveIn * 1000n + amountInWithFee
+  const denominator = reserveIn * feeDen + amountInWithFee
   if (denominator === 0n) {
     return 0n
   }
@@ -247,7 +264,8 @@ export const recomputeQuoteForAmount = (
       const isToken0In = tokenIn.address.toLowerCase() === source.reserves.token0.toLowerCase()
       const reserveIn = isToken0In ? source.reserves.reserve0 : source.reserves.reserve1
       const reserveOut = isToken0In ? source.reserves.reserve1 : source.reserves.reserve0
-      amountOut = getV2AmountOut(rollingAmountIn, reserveIn, reserveOut)
+      const protocol = source.dexId.startsWith('pancake') ? 'pancakeswap' : 'uniswap'
+      amountOut = getV2AmountOut(rollingAmountIn, reserveIn, reserveOut, protocol)
     } else if (source.reserves.liquidity !== undefined && source.reserves.liquidity > 0n) {
       if (source.amountIn === 0n || source.amountOut === 0n) return null
       amountOut = (rollingAmountIn * source.amountOut) / source.amountIn

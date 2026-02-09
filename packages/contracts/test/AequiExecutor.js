@@ -2,237 +2,221 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
 describe("AequiExecutor", function () {
-  let AequiExecutor;
   let executor;
-  let MockERC20;
   let tokenA;
   let tokenB;
   let owner;
   let user;
-  let recipient;
   let other;
 
   beforeEach(async function () {
-    [owner, user, recipient, other] = await ethers.getSigners();
+    [owner, user, , other] = await ethers.getSigners();
 
-    // Deploy Executor
-    AequiExecutor = await ethers.getContractFactory("AequiExecutor");
-    executor = await AequiExecutor.deploy();
+    const AequiExecutor = await ethers.getContractFactory("AequiExecutor");
+    executor = await AequiExecutor.deploy(owner.address);
     await executor.waitForDeployment();
 
-    // Deploy Mock Tokens
-    MockERC20 = await ethers.getContractFactory("MockERC20");
+    const MockERC20 = await ethers.getContractFactory("MockERC20");
     tokenA = await MockERC20.deploy("Token A", "TKA", ethers.parseEther("10000"));
     await tokenA.waitForDeployment();
     tokenB = await MockERC20.deploy("Token B", "TKB", ethers.parseEther("10000"));
     await tokenB.waitForDeployment();
 
-    // Distribute tokens
     await tokenA.transfer(user.address, ethers.parseEther("1000"));
     await tokenB.transfer(user.address, ethers.parseEther("1000"));
   });
 
   describe("Execution", function () {
-    it("Should pull tokens from sender", async function () {
+    it("Should pull tokens and flush delta to msg.sender", async function () {
       const amount = ethers.parseEther("100");
       await tokenA.connect(user).approve(executor.target, amount);
 
-      const pulls = [
-        {
-          token: tokenA.target,
-          amount: amount,
-        },
-      ];
+      const pulls = [{ token: tokenA.target, amount }];
 
       await executor.connect(user).execute(
         pulls,
-        [], // approvals
-        [], // calls
-        recipient.address,
-        [tokenA.target] // flush tokenA
+        [],
+        [],
+        [tokenA.target]
       );
 
-      expect(await tokenA.balanceOf(recipient.address)).to.equal(amount);
-      expect(await tokenA.balanceOf(user.address)).to.equal(ethers.parseEther("900"));
+      expect(await tokenA.balanceOf(user.address)).to.equal(ethers.parseEther("1000"));
+      expect(await tokenA.balanceOf(executor.target)).to.equal(0);
     });
 
     it("Should set and revoke approvals", async function () {
       const amount = ethers.parseEther("100");
       await tokenA.connect(user).approve(executor.target, amount);
 
-      const pulls = [
-        {
-          token: tokenA.target,
-          amount: amount,
-        },
-      ];
+      const pulls = [{ token: tokenA.target, amount }];
+      const approvals = [{
+        token: tokenA.target,
+        spender: other.address,
+        amount,
+        revokeAfter: true,
+      }];
 
-      // We will approve 'other' to spend tokens from executor
-      const approvals = [
-        {
-          token: tokenA.target,
-          spender: other.address,
-          amount: amount,
-          revokeAfter: true,
-        },
-      ];
-
-      // A call that checks allowance would be ideal, but for now we just check if it runs without revert
-      // and if allowance is 0 afterwards (because revokeAfter is true)
-      
-      // To verify allowance during execution, we would need a helper contract. 
-      // For this test, we rely on the fact that if revokeAfter is true, it should be 0 at the end.
-      
       await executor.connect(user).execute(
         pulls,
         approvals,
         [],
-        recipient.address,
         [tokenA.target]
       );
 
-      // Since we flushed, balance is 0, but allowance should also be reset to 0
       expect(await tokenA.allowance(executor.target, other.address)).to.equal(0);
     });
 
     it("Should not revoke approvals if revokeAfter is false", async function () {
-        const amount = ethers.parseEther("100");
-        await tokenA.connect(user).approve(executor.target, amount);
-  
-        const pulls = [
-          {
-            token: tokenA.target,
-            amount: amount,
-          },
-        ];
-  
-        const approvals = [
-          {
-            token: tokenA.target,
-            spender: other.address,
-            amount: amount,
-            revokeAfter: false,
-          },
-        ];
-  
-        await executor.connect(user).execute(
-          pulls,
-          approvals,
-          [],
-          recipient.address,
-          [tokenA.target]
-        );
-  
-        // Allowance should remain
-        expect(await tokenA.allowance(executor.target, other.address)).to.equal(amount);
-      });
+      const amount = ethers.parseEther("100");
+      await tokenA.connect(user).approve(executor.target, amount);
+
+      const pulls = [{ token: tokenA.target, amount }];
+      const approvals = [{
+        token: tokenA.target,
+        spender: other.address,
+        amount,
+        revokeAfter: false,
+      }];
+
+      await executor.connect(user).execute(
+        pulls,
+        approvals,
+        [],
+        [tokenA.target]
+      );
+
+      expect(await tokenA.allowance(executor.target, other.address)).to.equal(amount);
+    });
 
     it("Should perform arbitrary calls", async function () {
-      // We will make the executor call 'mint' on tokenB to the recipient
       const mintAmount = ethers.parseEther("50");
-      const callData = tokenB.interface.encodeFunctionData("mint", [recipient.address, mintAmount]);
+      const callData = tokenB.interface.encodeFunctionData("mint", [user.address, mintAmount]);
 
-      const calls = [
-        {
-          target: tokenB.target,
-          value: 0,
-          data: callData,
-        },
-      ];
+      const calls = [{
+        target: tokenB.target,
+        value: 0,
+        data: callData,
+        injectToken: ethers.ZeroAddress,
+        injectOffset: 0,
+      }];
 
-      await executor.connect(user).execute(
-        [], // pulls
-        [], // approvals
-        calls,
-        recipient.address,
-        [] // flush
-      );
+      await executor.connect(user).execute([], [], calls, []);
 
-      expect(await tokenB.balanceOf(recipient.address)).to.equal(mintAmount);
+      expect(await tokenB.balanceOf(user.address)).to.equal(ethers.parseEther("1000") + mintAmount);
     });
 
-    it("Should flush native ETH", async function () {
+    it("Should flush native ETH delta to msg.sender", async function () {
       const ethAmount = ethers.parseEther("1");
-      
-      const initialRecipientBalance = await ethers.provider.getBalance(recipient.address);
+      const balanceBefore = await ethers.provider.getBalance(user.address);
 
-      await executor.connect(user).execute(
-        [],
-        [],
-        [],
-        recipient.address,
-        [],
+      const tx = await executor.connect(user).execute(
+        [], [], [], [],
         { value: ethAmount }
       );
+      const receipt = await tx.wait();
+      const gasCost = receipt.gasUsed * receipt.gasPrice;
 
-      const finalRecipientBalance = await ethers.provider.getBalance(recipient.address);
-      expect(finalRecipientBalance - initialRecipientBalance).to.equal(ethAmount);
+      const balanceAfter = await ethers.provider.getBalance(user.address);
+      expect(balanceBefore - balanceAfter).to.equal(gasCost);
     });
 
-    it("Should flush remaining tokens", async function () {
-        const amount = ethers.parseEther("100");
-        await tokenA.connect(user).approve(executor.target, amount);
-  
-        const pulls = [
-          {
-            token: tokenA.target,
-            amount: amount,
-          },
-        ];
-  
-        await executor.connect(user).execute(
-          pulls,
-          [],
-          [],
-          recipient.address,
-          [tokenA.target]
-        );
-  
-        expect(await tokenA.balanceOf(recipient.address)).to.equal(amount);
-    });
+    it("Should revert if pull fails (no approval)", async function () {
+      const amount = ethers.parseEther("100");
+      const pulls = [{ token: tokenA.target, amount }];
 
-    it("Should revert if pull fails", async function () {
-        const amount = ethers.parseEther("100");
-        // No approval given
-  
-        const pulls = [
-          {
-            token: tokenA.target,
-            amount: amount,
-          },
-        ];
-  
-        await expect(
-            executor.connect(user).execute(
-            pulls,
-            [],
-            [],
-            recipient.address,
-            []
-          )
-        ).to.be.revertedWithCustomError(executor, "TokenTransferFailed");
+      await expect(
+        executor.connect(user).execute(pulls, [], [], [])
+      ).to.be.reverted;
     });
 
     it("Should revert if external call fails", async function () {
-        // Call a non-existent function or force fail
-        const calls = [
-            {
-              target: tokenA.target,
-              value: 0,
-              data: "0xdeadbeef", // Invalid selector likely to revert or do nothing if fallback not present, but MockERC20 has no fallback so it might revert or just succeed if no match? 
-              // Actually solidity contracts without fallback revert on unknown selector.
-            },
-          ];
-    
-          await expect(
-              executor.connect(user).execute(
-              [],
-              [],
-              calls,
-              recipient.address,
-              []
-            )
-          ).to.be.reverted; // We expect a revert, specific message depends on how solidity handles it (ExternalCallFailed custom error in Executor)
+      const calls = [{
+        target: tokenA.target,
+        value: 0,
+        data: "0xdeadbeef",
+        injectToken: ethers.ZeroAddress,
+        injectOffset: 0,
+      }];
+
+      await expect(
+        executor.connect(user).execute([], [], calls, [])
+      ).to.be.reverted;
+    });
+
+    it("Should revert on injection with offset < 4 (selector overwrite)", async function () {
+      const amount = ethers.parseEther("100");
+      await tokenA.connect(user).approve(executor.target, amount);
+      await tokenA.transfer(executor.target, amount);
+
+      const dummyData = "0xdeadbeef" + "00".repeat(32);
+      const calls = [{
+        target: tokenB.target,
+        value: 0,
+        data: dummyData,
+        injectToken: tokenA.target,
+        injectOffset: 0,
+      }];
+
+      await expect(
+        executor.connect(user).execute([], [], calls, [])
+      ).to.be.revertedWithCustomError(executor, "InvalidInjectionOffset");
+    });
+
+    it("Should revert on injection with offset + 32 > data.length", async function () {
+      const amount = ethers.parseEther("100");
+      await tokenA.transfer(executor.target, amount);
+
+      const shortData = "0xdeadbeef" + "00".repeat(8);
+      const calls = [{
+        target: tokenB.target,
+        value: 0,
+        data: shortData,
+        injectToken: tokenA.target,
+        injectOffset: 4,
+      }];
+
+      await expect(
+        executor.connect(user).execute([], [], calls, [])
+      ).to.be.revertedWithCustomError(executor, "InvalidInjectionOffset");
+    });
+  });
+
+  describe("Admin", function () {
+    it("Should pause and unpause", async function () {
+      await executor.connect(owner).pause();
+      await expect(
+        executor.connect(user).execute([], [], [], [])
+      ).to.be.reverted;
+
+      await executor.connect(owner).unpause();
+      await executor.connect(user).execute([], [], [], []);
+    });
+
+    it("Should rescue tokens", async function () {
+      const amount = ethers.parseEther("50");
+      await tokenA.transfer(executor.target, amount);
+
+      await executor.connect(owner).rescueFunds(tokenA.target, owner.address, amount);
+      expect(await tokenA.balanceOf(owner.address)).to.equal(ethers.parseEther("9000"));
+    });
+
+    it("Should rescue ETH", async function () {
+      const ethAmount = ethers.parseEther("1");
+      await owner.sendTransaction({ to: executor.target, value: ethAmount });
+
+      const balanceBefore = await ethers.provider.getBalance(owner.address);
+      const tx = await executor.connect(owner).rescueETH(owner.address, ethAmount);
+      const receipt = await tx.wait();
+      const gasCost = receipt.gasUsed * receipt.gasPrice;
+
+      const balanceAfter = await ethers.provider.getBalance(owner.address);
+      expect(balanceAfter - balanceBefore + gasCost).to.equal(ethAmount);
+    });
+
+    it("Should reject non-owner admin calls", async function () {
+      await expect(executor.connect(user).pause()).to.be.reverted;
+      await expect(executor.connect(user).rescueFunds(tokenA.target, user.address, 1)).to.be.reverted;
+      await expect(executor.connect(user).rescueETH(user.address, 1)).to.be.reverted;
     });
   });
 });

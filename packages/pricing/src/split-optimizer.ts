@@ -143,7 +143,20 @@ export const findBestSplit = (
   if (!bestSplits || bestAmountOut === 0n) return null
 
   const bestSingle = candidates[0]!
-  if (bestAmountOut <= bestSingle.amountOut) return null
+
+  const singleGasUnits = bestSingle.estimatedGasUnits ?? 0n
+  const gasPriceWei = bestSingle.gasPriceWei ?? 0n
+  const singleGasCost = singleGasUnits * gasPriceWei
+  const splitGasCost = bestGasUnits * gasPriceWei
+
+  const splitNetAdvantage = bestAmountOut > bestSingle.amountOut
+    ? bestAmountOut - bestSingle.amountOut
+    : 0n
+  const extraGasCost = splitGasCost > singleGasCost
+    ? splitGasCost - singleGasCost
+    : 0n
+
+  if (splitNetAdvantage <= extraGasCost) return null
 
   // Sort legs by ratio descending — primary leg first
   bestSplits.sort((a, b) => b.ratioBps - a.ratioBps)
@@ -159,8 +172,8 @@ export const findBestSplit = (
     lastToken.decimals,
   )
 
-  const gasPriceWei = primaryLeg.gasPriceWei
-  const estimatedGasCostWei = gasPriceWei ? bestGasUnits * gasPriceWei : null
+  const primaryGasPriceWei = primaryLeg.gasPriceWei
+  const estimatedGasCostWei = primaryGasPriceWei ? bestGasUnits * primaryGasPriceWei : null
 
   const weightedImpact = bestSplits.reduce(
     (acc, leg) => acc + leg.quote.priceImpactBps * leg.ratioBps,

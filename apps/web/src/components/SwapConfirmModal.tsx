@@ -24,19 +24,28 @@ export function SwapConfirmModal({
   const tokenIn = swapData?.tokens[0]
   const tokenOut = swapData?.tokens[swapData.tokens.length - 1]
 
+  const formatBigIntDisplay = (raw: string | number | bigint, decimals: number, precision = 6): string => {
+    const value = BigInt(raw)
+    const divisor = 10n ** BigInt(decimals)
+    const whole = value / divisor
+    const remainder = value - whole * divisor
+    const fracStr = remainder.toString().padStart(decimals, '0').slice(0, precision)
+    return `${whole}.${fracStr}`
+  }
+
   const amountIn = useMemo(() => {
     if (!swapData || !tokenIn) return '0'
-    return (Number(swapData.amountIn) / 10 ** tokenIn.decimals).toFixed(6)
+    return formatBigIntDisplay(swapData.amountIn, tokenIn.decimals)
   }, [swapData, tokenIn])
 
   const amountOut = useMemo(() => {
     if (!swapData || !tokenOut) return '0'
-    return (Number(swapData.amountOut) / 10 ** tokenOut.decimals).toFixed(6)
+    return formatBigIntDisplay(swapData.amountOut, tokenOut.decimals)
   }, [swapData, tokenOut])
 
   const minimumReceived = useMemo(() => {
     if (!swapData || !tokenOut) return '0'
-    return (Number(swapData.transaction.amountOutMinimum) / 10 ** tokenOut.decimals).toFixed(6)
+    return formatBigIntDisplay(swapData.transaction.amountOutMinimum, tokenOut.decimals)
   }, [swapData, tokenOut])
 
   const priceImpact = useMemo(() => {
@@ -156,6 +165,12 @@ export function SwapConfirmModal({
                 {priceImpact}%
               </span>
             </div>
+
+            {Number(priceImpact) > 15 && (
+              <div className="error-message" style={{ marginTop: '8px', fontSize: '13px' }}>
+                ⚠️ Price impact is extremely high ({priceImpact}%). You may lose a significant portion of your funds.
+              </div>
+            )}
 
             <div className="swap-detail-row">
               <span className="swap-detail-label">Minimum Received</span>

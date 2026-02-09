@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { searchTokens } from '../services/dexscreener'
 import type { Token } from '../services/token-manager'
+import { tokenManager } from '../services/token-manager'
 import { getTokenLogo } from '../utils/logos'
 
 interface TokenModalProps {
@@ -14,6 +15,7 @@ export function TokenModal({ isOpen, onClose, onSelect, defaultTokens }: TokenMo
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<Token[]>([])
   const [loading, setLoading] = useState(false)
+  const [, forceUpdate] = useState(0)
 
   useEffect(() => {
     if (!isOpen) {
@@ -32,8 +34,6 @@ export function TokenModal({ isOpen, onClose, onSelect, defaultTokens }: TokenMo
       setLoading(true)
       try {
         const results = await searchTokens(searchQuery)
-        // Filter results by chain if possible, or just show all
-        // For now, we'll just show what we find
         setSearchResults(results)
       } catch (error) {
         console.error('Search failed', error)
@@ -45,6 +45,12 @@ export function TokenModal({ isOpen, onClose, onSelect, defaultTokens }: TokenMo
     const debounce = setTimeout(search, 500)
     return () => clearTimeout(debounce)
   }, [searchQuery])
+
+  const handleRemoveImported = (e: React.MouseEvent, address: string) => {
+    e.stopPropagation()
+    tokenManager.removeImportedToken(address)
+    forceUpdate((n) => n + 1)
+  }
 
   if (!isOpen) return null
 
@@ -89,7 +95,19 @@ export function TokenModal({ isOpen, onClose, onSelect, defaultTokens }: TokenMo
                   <span className="token-symbol">{token.symbol}</span>
                   <span className="token-name">{token.name}</span>
                 </div>
-                {token.isImported && <span className="import-badge">Imported</span>}
+                {token.isImported && (
+                  <>
+                    <span className="import-badge">Imported</span>
+                    <button
+                      className="remove-token-btn"
+                      onClick={(e) => handleRemoveImported(e, token.address)}
+                      title="Remove imported token"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '14px', padding: '4px', marginLeft: '4px' }}
+                    >
+                      ×
+                    </button>
+                  </>
+                )}
               </div>
             ))
           )}
