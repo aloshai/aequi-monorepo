@@ -83,11 +83,14 @@ export class UniswapV3Adapter extends BaseDexAdapter {
         tick
       )
       
+      const isToken0In = tokenIn.address.toLowerCase() < tokenOut.address.toLowerCase()
+      const directionalPrice = isToken0In ? pool.token0Price : pool.token1Price
+
       const midPriceQ18 = computeMidPriceQ18FromPrice(
         this.protocol,
         tokenInInstance as any,
         tokenOut.decimals,
-        pool.token0Price
+        directionalPrice
       )
       
       const executionPriceQ18 = computeExecutionPriceQ18(

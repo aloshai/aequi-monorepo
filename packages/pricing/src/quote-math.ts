@@ -141,13 +141,13 @@ export const computePriceImpactBps = (
     return 0
   }
 
-  const diff = expectedOut > amountOut ? expectedOut - amountOut : amountOut - expectedOut
-  if (diff === 0n) {
+  if (amountOut >= expectedOut) {
     return 0
   }
 
+  const diff = expectedOut - amountOut
   const impact = (diff * 10000n) / expectedOut
-  const capped = impact > 10_000_000n ? 10_000_000n : impact
+  const capped = impact > 10000n ? 10000n : impact
   return Number(capped)
 }
 
