@@ -1,7 +1,6 @@
 import type { Address } from 'viem'
 import type { ChainConfig, PriceQuote, RouteHopVersion, RoutePreference, TokenMetadata } from '@aequi/core'
 import { defaultAmountForDecimals } from './units'
-import { selectBestQuote } from './route-planner'
 import { compareQuotes } from './quote-math'
 import { findBestSplit, type SplitOptimizerConfig } from './split-optimizer'
 import { Q18 } from './math'
@@ -89,16 +88,19 @@ export class PriceService {
 
     const candidates = forceMultiHop ? multiHopQuotes : [...directQuotes, ...multiHopQuotes]
 
+    const nativeToOutputPriceQ18 = this.resolveNativeToOutputPrice(chain, tokenOut, candidates)
+    const gasAwareSorter = (a: PriceQuote, b: PriceQuote) =>
+      compareQuotes(a, b, nativeToOutputPriceQ18, tokenOut.decimals)
+
     const shouldSplit = enableSplit !== false && this.splitConfig !== null
     if (shouldSplit && candidates.length >= 2) {
-      const sorted = [...candidates].sort(compareQuotes)
+      const sorted = [...candidates].sort(gasAwareSorter)
 
-      const nativeToOutputPriceQ18 = this.resolveNativeToOutputPrice(chain, tokenOut, sorted)
       const splitConfig = { ...this.splitConfig!, nativeToOutputPriceQ18 }
       const splitResult = findBestSplit(sorted, amountIn, splitConfig)
 
       if (splitResult) {
-        const remaining = sorted.filter((q) => q !== sorted[0]).sort(compareQuotes)
+        const remaining = sorted.filter((q) => q !== sorted[0]).sort(gasAwareSorter)
         if (remaining.length) {
           splitResult.offers = remaining
         }
@@ -106,12 +108,13 @@ export class PriceService {
       }
     }
 
-    const best = selectBestQuote(candidates)
+    const sorted = [...candidates].sort(gasAwareSorter)
+    const best = sorted[0] ?? null
     if (!best) {
       return null
     }
 
-    const remaining = candidates.filter((quote) => quote !== best).sort(compareQuotes)
+    const remaining = sorted.slice(1)
     if (remaining.length) {
       best.offers = remaining
     }

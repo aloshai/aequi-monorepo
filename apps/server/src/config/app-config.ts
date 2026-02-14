@@ -84,9 +84,9 @@ export const appConfig = {
   routing: {
     maxHopDepth: Math.min(parseIntWithDefault(process.env.MAX_HOP_DEPTH, 2, 1), 4),
     enableSplitRouting: process.env.ENABLE_SPLIT_ROUTING !== 'false',
-    maxSplitLegs: Math.min(parseIntWithDefault(process.env.MAX_SPLIT_LEGS, 3, 2), 5),
+    maxSplitLegs: Math.min(parseIntWithDefault(process.env.MAX_SPLIT_LEGS, 20, 2), 20),
     splitConvergenceThresholdBps: parseIntWithDefault(process.env.SPLIT_CONVERGENCE_THRESHOLD_BPS, 10, 1),
-    splitMaxIterations: parseIntWithDefault(process.env.SPLIT_MAX_ITERATIONS, 50, 5),
+    splitMaxIterations: parseIntWithDefault(process.env.SPLIT_MAX_ITERATIONS, 100, 5),
     splitMinLegRatioBps: parseIntWithDefault(process.env.SPLIT_MIN_LEG_RATIO_BPS, 50, 10),
   },
 } as const

@@ -193,25 +193,44 @@ export const estimateAmountOutFromMidPrice = (
   return applyPriceQ18(midPriceQ18, adjustedAmountIn, inDecimals, outDecimals)
 }
 
-export const compareQuotes = (a: PriceQuote, b: PriceQuote) => {
-  if (a.amountOut !== b.amountOut) {
-    return a.amountOut > b.amountOut ? -1 : 1
+export const convertGasToOutputUnits = (
+  gasCostWei: bigint,
+  outputDecimals: number,
+  nativeToOutputPriceQ18: bigint,
+): bigint => {
+  if (nativeToOutputPriceQ18 <= 0n || gasCostWei <= 0n) return 0n
+  const outputFactor = 10n ** BigInt(outputDecimals)
+  return (gasCostWei * nativeToOutputPriceQ18 * outputFactor) / (Q18 * Q18)
+}
+
+export const compareQuotes = (
+  a: PriceQuote,
+  b: PriceQuote,
+  nativeToOutputPriceQ18?: bigint,
+  outputDecimals?: number,
+) => {
+  const aGas = a.estimatedGasCostWei ?? 0n
+  const bGas = b.estimatedGasCostWei ?? 0n
+
+  if (nativeToOutputPriceQ18 && nativeToOutputPriceQ18 > 0n && outputDecimals !== undefined) {
+    const aGasOutput = convertGasToOutputUnits(aGas, outputDecimals, nativeToOutputPriceQ18)
+    const bGasOutput = convertGasToOutputUnits(bGas, outputDecimals, nativeToOutputPriceQ18)
+    const aNet = a.amountOut - aGasOutput
+    const bNet = b.amountOut - bGasOutput
+    if (aNet !== bNet) return aNet > bNet ? -1 : 1
+  } else {
+    if (a.amountOut !== b.amountOut) return a.amountOut > b.amountOut ? -1 : 1
+
+    const aHasGas = aGas > 0n
+    const bHasGas = bGas > 0n
+    if (aHasGas && bHasGas && aGas !== bGas) return aGas < bGas ? -1 : 1
+    if (aHasGas !== bHasGas) return aHasGas ? -1 : 1
   }
-  
-  const aHasGas = a.estimatedGasCostWei !== undefined && a.estimatedGasCostWei !== null
-  const bHasGas = b.estimatedGasCostWei !== undefined && b.estimatedGasCostWei !== null
-  if (aHasGas && bHasGas) {
-    if (a.estimatedGasCostWei! !== b.estimatedGasCostWei!) {
-      return a.estimatedGasCostWei! < b.estimatedGasCostWei! ? -1 : 1
-    }
-  } else if (aHasGas !== bHasGas) {
-    return aHasGas ? -1 : 1
-  }
-  
+
   if (a.liquidityScore !== b.liquidityScore) {
     return a.liquidityScore > b.liquidityScore ? -1 : 1
   }
-  
+
   return a.priceImpactBps <= b.priceImpactBps ? -1 : 1
 }
 

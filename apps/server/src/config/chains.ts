@@ -32,7 +32,7 @@ export const CHAIN_CONFIGS: Record<ChainKey, ChainConfig> = {
                 factoryAddress: '0x1F98431c8aD98523631AE4a59f267346ea31F984',
                 routerAddress: '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45',
                 quoterAddress: '0x61fFE014bA17989E743c5F6cB21bF9697530B21e',
-                feeTiers: [FeeAmount.LOWEST, FeeAmount.LOW, FeeAmount.MEDIUM, FeeAmount.HIGH],
+                feeTiers: [FeeAmount.LOWEST, FeeAmount.LOW_200, FeeAmount.LOW_300, FeeAmount.LOW_400, FeeAmount.LOW, FeeAmount.MEDIUM, FeeAmount.HIGH],
                 useRouter02: true, // Uniswap V3 uses Router02 (no deadline in struct)
             },
         ],
@@ -89,7 +89,7 @@ export const CHAIN_CONFIGS: Record<ChainKey, ChainConfig> = {
                 factoryAddress: '0xdB1d10011AD0Ff90774D0C6Bb92e5C5c8b4461F7',
                 routerAddress: '0xB971eF87ede563556b2ED4b1C0b0019111Dd85d2',
                 quoterAddress: '0x78D78E420Da98ad378D7799bE8f4AF69033EB077',
-                feeTiers: [FeeAmount.LOWEST, FeeAmount.LOW, FeeAmount.MEDIUM, FeeAmount.HIGH],
+                feeTiers: [FeeAmount.LOWEST, FeeAmount.LOW_200, FeeAmount.LOW_300, FeeAmount.LOW_400, FeeAmount.LOW, FeeAmount.MEDIUM, FeeAmount.HIGH],
                 useRouter02: true, // Uniswap V3 uses Router02 (no deadline in struct)
             },
         ],

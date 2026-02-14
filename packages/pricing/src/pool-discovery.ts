@@ -907,8 +907,8 @@ export class PoolDiscovery {
     const graph = await this.buildPoolGraph(chain, allTokens, client, allowedVersions)
 
     // Phase 2: Iterative deepening on local graph — 0 RPC calls
-    const VALIDATION_TOP_K = 10
-    const MAX_PARTIALS_PER_DEPTH = 5
+    const VALIDATION_TOP_K = 16
+    const MAX_PARTIALS_PER_DEPTH = 12
 
     interface PartialRoute {
       path: TokenMetadata[]

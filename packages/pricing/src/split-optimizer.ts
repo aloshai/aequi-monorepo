@@ -1,11 +1,12 @@
 import type { PriceQuote, SplitLeg } from '@aequi/core'
-import { recomputeQuoteForAmount, computeExecutionPriceQ18 } from './quote-math'
+import { recomputeQuoteForAmount, computeExecutionPriceQ18, convertGasToOutputUnits } from './quote-math'
 import { Q18 } from './math'
 import { marginalOutputForQuote } from './marginal'
 
 const GAS_PER_SPLIT_OVERHEAD = 80000n
 const Q128 = 1n << 128n
 const MIN_ALLOCATION = 1n
+const MAX_ROUTES_CAP = 20
 
 const routeSignature = (quote: PriceQuote): string =>
   quote.sources.map((s) => `${s.dexId}:${s.poolAddress}`).join('|')
@@ -32,20 +33,6 @@ export interface SplitOptimizerConfig {
   nativeToOutputPriceQ18?: bigint
 }
 
-const convertGasToOutputUnits = (
-  gasCostWei: bigint,
-  outputDecimals: number,
-  nativeToOutputPriceQ18: bigint,
-): bigint => {
-  if (nativeToOutputPriceQ18 <= 0n || gasCostWei <= 0n) return 0n
-  const outputFactor = 10n ** BigInt(outputDecimals)
-  // gasCostWei is in native token units (18 decimals)
-  // nativeToOutputPriceQ18 = how many output tokens per 1 native token (Q18 scaled)
-  // result = gasCostWei * price * outputFactor / (Q18 * nativeFactor)
-  // Since native is always 18 decimals, nativeFactor = Q18, they cancel
-  return (gasCostWei * nativeToOutputPriceQ18 * outputFactor) / (Q18 * Q18)
-}
-
 interface LegState {
   route: PriceQuote
   allocated: bigint
@@ -59,37 +46,56 @@ const optimizeSplitMPE = (
   convergenceThresholdBps: number,
   maxIterations: number,
   minLegRatioBps: number,
+  initialAllocations?: bigint[],
 ): { legs: LegState[]; totalOut: bigint } | null => {
-  const n = routes.length
-  if (n < 2 || amountIn <= 0n) return null
+  if (routes.length < 2 || amountIn <= 0n) return null
 
   const minAllocation = (amountIn * BigInt(minLegRatioBps)) / 10000n
 
-  // Initialize: equal distribution
+  const n = routes.length
+  const initLegs: LegState[] = []
+
+  if (initialAllocations && initialAllocations.length === n) {
+    for (let i = 0; i < n; i++) {
+      initLegs.push({ route: routes[i]!, allocated: initialAllocations[i]!, recomputed: null, marginal: 0n })
+    }
+  } else {
+    const baseAlloc = amountIn / BigInt(n)
+    let totalAllocated = 0n
+    for (let i = 0; i < n; i++) {
+      const alloc = i === n - 1 ? amountIn - totalAllocated : baseAlloc
+      totalAllocated += alloc
+      initLegs.push({ route: routes[i]!, allocated: alloc, recomputed: null, marginal: 0n })
+    }
+  }
+
+  // Recompute — remove legs that fail at initial allocation
   const legs: LegState[] = []
-  const baseAlloc = amountIn / BigInt(n)
-  let allocated = 0n
+  let failedAlloc = 0n
 
-  for (let i = 0; i < n; i++) {
-    const alloc = i === n - 1 ? amountIn - allocated : baseAlloc
-    allocated += alloc
-    legs.push({
-      route: routes[i]!,
-      allocated: alloc,
-      recomputed: null,
-      marginal: 0n,
-    })
-  }
-
-  // Recompute initial state
-  for (const leg of legs) {
+  for (const leg of initLegs) {
     leg.recomputed = recomputeQuoteForAmount(leg.route, leg.allocated)
-    if (!leg.recomputed) return null
-    leg.marginal = marginalOutputForQuote(leg.route, leg.allocated)
+    if (leg.recomputed) {
+      leg.marginal = marginalOutputForQuote(leg.route, leg.allocated)
+      legs.push(leg)
+    } else {
+      failedAlloc += leg.allocated
+    }
   }
 
+  if (legs.length < 2) return null
+
+  // Redistribute failed allocations to best remaining legs
+  if (failedAlloc > 0n) {
+    legs.sort((a, b) => (b.marginal > a.marginal ? 1 : -1))
+    legs[0]!.allocated += failedAlloc
+    legs[0]!.recomputed = recomputeQuoteForAmount(legs[0]!.route, legs[0]!.allocated)
+    if (!legs[0]!.recomputed) return null
+    legs[0]!.marginal = marginalOutputForQuote(legs[0]!.route, legs[0]!.allocated)
+  }
+
+  // MPE iteration loop — pairwise transfer from worst to best marginal
   for (let iter = 0; iter < maxIterations; iter++) {
-    // Find legs with highest and lowest marginal output
     let highIdx = 0
     let lowIdx = 0
     let highMarginal = legs[0]!.marginal
@@ -107,30 +113,35 @@ const optimizeSplitMPE = (
     }
 
     if (highIdx === lowIdx) break
-
-    // Convergence check: marginal spread relative to average
     if (highMarginal <= 0n) break
+
     const spread = ((highMarginal - lowMarginal) * 10000n) / highMarginal
     if (spread <= BigInt(convergenceThresholdBps)) break
 
-    // Transfer amount: proportional to marginal difference
-    // Use a damped step: move ~30% of the gap to avoid oscillation
-    const transferBase = (amountIn * spread) / (10000n * 3n)
+    const transferBase = (amountIn * spread) / (10000n * 2n)
     const transfer = transferBase > MIN_ALLOCATION ? transferBase : MIN_ALLOCATION
 
-    // Transfer from low-marginal (overallocated) to high-marginal (underallocated)
-    const actualTransfer = (() => {
-      const maxFromLow = legs[lowIdx]!.allocated - minAllocation
-      if (maxFromLow <= 0n) return 0n
-      return transfer < maxFromLow ? transfer : maxFromLow
-    })()
-
-    if (actualTransfer <= 0n) break
+    const maxFromLow = legs[lowIdx]!.allocated - minAllocation
+    const actualTransfer = maxFromLow <= 0n ? 0n : (transfer < maxFromLow ? transfer : maxFromLow)
+    if (actualTransfer <= 0n) {
+      // Low leg is at minimum — try removing it entirely
+      if (legs.length > 2) {
+        const removed = legs.splice(lowIdx, 1)[0]!
+        // Give removed allocation to highest marginal leg
+        const newHighIdx = legs.findIndex((l) => l.marginal === highMarginal) 
+        const targetIdx = newHighIdx >= 0 ? newHighIdx : 0
+        legs[targetIdx]!.allocated += removed.allocated
+        legs[targetIdx]!.recomputed = recomputeQuoteForAmount(legs[targetIdx]!.route, legs[targetIdx]!.allocated)
+        if (!legs[targetIdx]!.recomputed) return null
+        legs[targetIdx]!.marginal = marginalOutputForQuote(legs[targetIdx]!.route, legs[targetIdx]!.allocated)
+        continue
+      }
+      break
+    }
 
     legs[lowIdx]!.allocated -= actualTransfer
     legs[highIdx]!.allocated += actualTransfer
 
-    // Recompute affected legs
     for (const idx of [lowIdx, highIdx]) {
       const leg = legs[idx]!
       leg.recomputed = recomputeQuoteForAmount(leg.route, leg.allocated)
@@ -139,23 +150,110 @@ const optimizeSplitMPE = (
     }
   }
 
-  // Prune legs that fell below minimum
-  const activelegs = legs.filter((l) => l.allocated >= minAllocation && l.recomputed)
-  if (activelegs.length < 2) return null
-
-  // Redistribute pruned amounts proportionally
-  const activeTotal = activelegs.reduce((sum, l) => sum + l.allocated, 0n)
-  if (activeTotal < amountIn) {
-    const remainder = amountIn - activeTotal
-    // Give remainder to the leg with highest marginal output
-    const bestLeg = activelegs.reduce((best, l) => l.marginal > best.marginal ? l : best)
-    bestLeg.allocated += remainder
-    bestLeg.recomputed = recomputeQuoteForAmount(bestLeg.route, bestLeg.allocated)
-    if (!bestLeg.recomputed) return null
+  // Final prune: remove legs below minimum, redistribute
+  let pruned = true
+  while (pruned) {
+    pruned = false
+    const weakIdx = legs.findIndex((l) => l.allocated < minAllocation)
+    if (weakIdx >= 0 && legs.length > 2) {
+      const removed = legs.splice(weakIdx, 1)[0]!
+      const bestLeg = legs.reduce((best, l) => l.marginal > best.marginal ? l : best)
+      bestLeg.allocated += removed.allocated
+      bestLeg.recomputed = recomputeQuoteForAmount(bestLeg.route, bestLeg.allocated)
+      if (!bestLeg.recomputed) return null
+      bestLeg.marginal = marginalOutputForQuote(bestLeg.route, bestLeg.allocated)
+      pruned = true
+    }
   }
 
-  const totalOut = activelegs.reduce((sum, l) => sum + l.recomputed!.amountOut, 0n)
-  return { legs: activelegs, totalOut }
+  if (legs.length < 2) return null
+
+  const totalOut = legs.reduce((sum, l) => sum + l.recomputed!.amountOut, 0n)
+  return { legs, totalOut }
+}
+
+const optimizeSplitMPEGreedy = (
+  routes: PriceQuote[],
+  amountIn: bigint,
+  convergenceThresholdBps: number,
+  maxIterations: number,
+  minLegRatioBps: number,
+): { legs: LegState[]; totalOut: bigint } | null => {
+  if (routes.length < 2 || amountIn <= 0n) return null
+
+  const sortedRoutes = [...routes].sort((a, b) =>
+    a.amountOut > b.amountOut ? -1 : a.amountOut < b.amountOut ? 1 : 0,
+  )
+
+  const sharePerLeg = 10000n / BigInt(sortedRoutes.length)
+  const legs: LegState[] = []
+
+  let remaining = amountIn
+  legs.push({
+    route: sortedRoutes[0]!,
+    allocated: amountIn,
+    recomputed: null,
+    marginal: 0n,
+  })
+
+  for (let i = 1; i < sortedRoutes.length; i++) {
+    const steal = (amountIn * sharePerLeg) / 10000n
+    if (steal <= 0n) break
+
+    const newLeg: LegState = {
+      route: sortedRoutes[i]!,
+      allocated: steal,
+      recomputed: null,
+      marginal: 0n,
+    }
+
+    newLeg.recomputed = recomputeQuoteForAmount(newLeg.route, steal)
+    if (!newLeg.recomputed) continue
+
+    legs[0]!.allocated -= steal
+    remaining -= steal
+    legs.push(newLeg)
+  }
+
+  if (legs.length < 2) return null
+
+  for (const leg of legs) {
+    leg.recomputed = recomputeQuoteForAmount(leg.route, leg.allocated)
+    if (!leg.recomputed) return null
+    leg.marginal = marginalOutputForQuote(leg.route, leg.allocated)
+  }
+
+  return optimizeSplitMPE(
+    legs.map((l) => l.route),
+    amountIn,
+    convergenceThresholdBps,
+    maxIterations,
+    minLegRatioBps,
+    legs.map((l) => l.allocated),
+  )
+}
+
+const buildSplitResult = (
+  result: { legs: LegState[]; totalOut: bigint },
+): { splits: SplitLeg[]; gasUnits: bigint; amountOut: bigint } => {
+  const totalAlloc = result.legs.reduce((s, l) => s + l.allocated, 0n)
+  let bpsAssigned = 0
+
+  const splits = result.legs.map((leg, idx) => {
+    const isLast = idx === result.legs.length - 1
+    const ratioBps = isLast
+      ? 10000 - bpsAssigned
+      : Number((leg.allocated * 10000n) / totalAlloc)
+    bpsAssigned += ratioBps
+    return { quote: leg.recomputed!, ratioBps }
+  })
+
+  const gasUnits = result.legs.reduce(
+    (sum, l) => sum + (l.recomputed!.estimatedGasUnits ?? 0n),
+    0n,
+  ) + GAS_PER_SPLIT_OVERHEAD * BigInt(result.legs.length - 1)
+
+  return { splits, gasUnits, amountOut: result.totalOut }
 }
 
 export const findBestSplit = (
@@ -169,50 +267,60 @@ export const findBestSplit = (
     return null
   }
 
-  const maxLegs = Math.min(Math.max(config.maxSplitLegs, 2), 5)
+  const maxLegs = Math.min(Math.max(config.maxSplitLegs, 2), MAX_ROUTES_CAP)
   const convergenceThresholdBps = config.convergenceThresholdBps ?? 10
-  const maxIterations = config.maxIterations ?? 50
+  const maxIterations = config.maxIterations ?? 100
   const minLegRatioBps = config.minLegRatioBps ?? 50
 
-  const routes = deduplicateRoutes(candidates, 7)
+  const routes = deduplicateRoutes(candidates, MAX_ROUTES_CAP)
   if (routes.length < 2) return null
 
   let bestAmountOut = 0n
   let bestSplits: SplitLeg[] | null = null
   let bestGasUnits = 0n
 
-  const maxN = Math.min(maxLegs, routes.length)
+  // Strategy 1: Exhaustive 2-way combinations (C(K,2) — always fast even with K=20)
+  for (let i = 0; i < routes.length; i++) {
+    for (let j = i + 1; j < routes.length; j++) {
+      const result = optimizeSplitMPE(
+        [routes[i]!, routes[j]!],
+        amountIn, convergenceThresholdBps, maxIterations, minLegRatioBps,
+      )
+      if (!result || result.totalOut <= bestAmountOut) continue
 
-  // Try N-way splits from 2 up to maxN
-  for (let n = 2; n <= maxN; n++) {
-    // Generate all combinations of n routes from available routes
-    const combos = combinations(routes, n)
+      const built = buildSplitResult(result)
+      bestAmountOut = built.amountOut
+      bestSplits = built.splits
+      bestGasUnits = built.gasUnits
+    }
+  }
 
-    for (const combo of combos) {
-      const result = optimizeSplitMPE(combo, amountIn, convergenceThresholdBps, maxIterations, minLegRatioBps)
-      if (!result) continue
+  // Strategy 2: Full MPE with all routes — natural N-way discovery (single pass)
+  if (routes.length >= 3 && maxLegs >= 3) {
+    const fullRoutes = routes.slice(0, maxLegs)
+    const result = optimizeSplitMPE(
+      fullRoutes, amountIn, convergenceThresholdBps, maxIterations, minLegRatioBps,
+    )
 
-      if (result.totalOut > bestAmountOut) {
-        bestAmountOut = result.totalOut
+    if (result && result.legs.length <= maxLegs && result.totalOut > bestAmountOut) {
+      const built = buildSplitResult(result)
+      bestAmountOut = built.amountOut
+      bestSplits = built.splits
+      bestGasUnits = built.gasUnits
+    }
+  }
 
-        // Compute BPS ratios from actual allocations
-        const totalAlloc = result.legs.reduce((s, l) => s + l.allocated, 0n)
-        let bpsAssigned = 0
-
-        bestSplits = result.legs.map((leg, idx) => {
-          const isLast = idx === result.legs.length - 1
-          const ratioBps = isLast
-            ? 10000 - bpsAssigned
-            : Number((leg.allocated * 10000n) / totalAlloc)
-          bpsAssigned += ratioBps
-          return { quote: leg.recomputed!, ratioBps }
-        })
-
-        bestGasUnits = result.legs.reduce(
-          (sum, l) => sum + (l.recomputed!.estimatedGasUnits ?? 0n),
-          0n,
-        ) + GAS_PER_SPLIT_OVERHEAD * BigInt(n - 1)
-      }
+  // Strategy 3: Greedy init MPE — start heavy on best route, add legs iteratively
+  if (routes.length >= 3 && maxLegs >= 3) {
+    const greedyRoutes = routes.slice(0, maxLegs)
+    const greedyResult = optimizeSplitMPEGreedy(
+      greedyRoutes, amountIn, convergenceThresholdBps, maxIterations, minLegRatioBps,
+    )
+    if (greedyResult && greedyResult.legs.length <= maxLegs && greedyResult.totalOut > bestAmountOut) {
+      const built = buildSplitResult(greedyResult)
+      bestAmountOut = built.amountOut
+      bestSplits = built.splits
+      bestGasUnits = built.gasUnits
     }
   }
 
@@ -241,7 +349,6 @@ export const findBestSplit = (
         )
         if (outputAdvantage <= extraGasInOutputUnits) return null
       } else {
-        // Fallback: if output token is 18 decimals (likely wrapped native), compare directly
         if (outputToken.decimals === 18 && outputAdvantage <= extraGasWei) return null
       }
     }
@@ -290,17 +397,5 @@ export const findBestSplit = (
     gasPriceWei,
     isSplit: true,
     splits: bestSplits,
-  }
-}
-
-function* combinations<T>(arr: T[], k: number): Generator<T[]> {
-  if (k === 1) {
-    for (const item of arr) yield [item]
-    return
-  }
-  for (let i = 0; i <= arr.length - k; i++) {
-    for (const rest of combinations(arr.slice(i + 1), k - 1)) {
-      yield [arr[i]!, ...rest]
-    }
   }
 }
