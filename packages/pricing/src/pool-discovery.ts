@@ -750,7 +750,7 @@ export class PoolDiscovery {
     return quotes
   }
 
-  private async batchValidateRoutes(
+  async batchValidateRoutes(
     candidates: PriceQuote[],
     chain: ChainConfig,
     client: PublicClient,

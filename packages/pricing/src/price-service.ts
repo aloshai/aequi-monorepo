@@ -1,7 +1,7 @@
 import type { Address } from 'viem'
 import type { ChainConfig, PriceQuote, RouteHopVersion, RoutePreference, TokenMetadata } from '@aequi/core'
 import { defaultAmountForDecimals } from './units'
-import { compareQuotes } from './quote-math'
+import { compareQuotes, computeExecutionPriceQ18, computePriceImpactBps, estimateGasForRoute } from './quote-math'
 import { findBestSplit, type SplitOptimizerConfig } from './split-optimizer'
 import { Q18 } from './math'
 import type { ChainClientProvider, QuoteResult } from './types'
@@ -35,6 +35,58 @@ export class PriceService {
     splitConfig?: SplitOptimizerConfig | null,
   ) {
     this.splitConfig = splitConfig ?? null
+  }
+
+  private async revalidateSplitV3(
+    splitResult: PriceQuote,
+    chain: ChainConfig,
+    client: any,
+    gasPriceWei: bigint | null,
+  ): Promise<PriceQuote | null> {
+    if (!splitResult.splits?.length) return null
+
+    const hasV3 = splitResult.splits.some((leg) =>
+      leg.quote.hopVersions.some((v) => v === 'v3'),
+    )
+    if (!hasV3) return null
+
+    const legQuotes = splitResult.splits.map((leg) => leg.quote)
+    const validated = await this.poolDiscovery.batchValidateRoutes(
+      legQuotes, chain, client, gasPriceWei,
+    )
+
+    if (validated.length !== legQuotes.length) return null
+
+    const newSplits = splitResult.splits.map((leg, i) => ({
+      ratioBps: leg.ratioBps,
+      quote: validated[i]!,
+    }))
+
+    const totalAmountOut = newSplits.reduce((sum, leg) => sum + leg.quote.amountOut, 0n)
+    const firstToken = splitResult.path[0]!
+    const lastToken = splitResult.path[splitResult.path.length - 1]!
+
+    const executionPriceQ18 = computeExecutionPriceQ18(
+      splitResult.amountIn, totalAmountOut, firstToken.decimals, lastToken.decimals,
+    )
+    const priceImpactBps = computePriceImpactBps(
+      splitResult.midPriceQ18, splitResult.amountIn, totalAmountOut,
+      firstToken.decimals, lastToken.decimals,
+    )
+    const totalGasUnits = newSplits.reduce(
+      (sum, leg) => sum + estimateGasForRoute(leg.quote.hopVersions), 0n,
+    )
+
+    return {
+      ...splitResult,
+      amountOut: totalAmountOut,
+      priceQ18: executionPriceQ18,
+      executionPriceQ18,
+      priceImpactBps,
+      estimatedGasUnits: totalGasUnits,
+      estimatedGasCostWei: gasPriceWei ? totalGasUnits * gasPriceWei : null,
+      splits: newSplits,
+    }
   }
 
   async getBestPrice(
@@ -100,11 +152,13 @@ export class PriceService {
       const splitResult = findBestSplit(sorted, amountIn, splitConfig)
 
       if (splitResult) {
+        const revalidated = await this.revalidateSplitV3(splitResult, chain, client, gasPriceWei)
+        const finalSplit = revalidated ?? splitResult
         const remaining = sorted.filter((q) => q !== sorted[0]).sort(gasAwareSorter)
         if (remaining.length) {
-          splitResult.offers = remaining
+          finalSplit.offers = remaining
         }
-        return splitResult
+        return finalSplit
       }
     }
 

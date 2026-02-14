@@ -426,7 +426,9 @@ export class SwapBuilder {
 
       const legMinOut = isLastLeg
         ? amountOutMin - allocatedMinOut
-        : (amountOutMin * BigInt(leg.ratioBps)) / 10000n
+        : quote.amountOut > 0n
+          ? (amountOutMin * legQuote.amountOut) / quote.amountOut
+          : 0n
       allocatedMinOut += legMinOut
 
       let availableAmount = legAmountIn
