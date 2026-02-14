@@ -526,10 +526,12 @@ export class SwapBuilder {
       tokensToFlush.add(chain.wrappedNativeAddress)
     }
 
+    const mergedApprovals = this.mergeApprovals(approvals)
+
     const executorData = encodeFunctionData({
       abi: AEQUI_EXECUTOR_ABI,
       functionName: 'execute',
-      args: [pulls, approvals, executorCalls, Array.from(tokensToFlush)],
+      args: [pulls, mergedApprovals, executorCalls, Array.from(tokensToFlush)],
     })
 
     return {
@@ -549,7 +551,7 @@ export class SwapBuilder {
       },
       executor: {
         pulls,
-        approvals,
+        approvals: mergedApprovals,
         calls: executorCalls,
         tokensToFlush: Array.from(tokensToFlush),
       },
@@ -707,6 +709,29 @@ export class SwapBuilder {
         },
       ],
     })
+  }
+
+  private mergeApprovals(
+    approvals: SwapTransaction['executor']['approvals'],
+  ): SwapTransaction['executor']['approvals'] {
+    const MAX_UINT256 = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
+    const map = new Map<string, SwapTransaction['executor']['approvals'][0]>()
+
+    for (const a of approvals) {
+      const key = `${a.token.toLowerCase()}:${a.spender.toLowerCase()}`
+      const existing = map.get(key)
+      if (existing) {
+        if (existing.amount < MAX_UINT256 && a.amount < MAX_UINT256) {
+          existing.amount += a.amount
+        } else {
+          existing.amount = MAX_UINT256
+        }
+      } else {
+        map.set(key, { ...a })
+      }
+    }
+
+    return Array.from(map.values())
   }
 
   private resolveExecutor(chain: ChainKey, chainName: string): Address {

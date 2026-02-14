@@ -65,6 +65,8 @@ export function SwapConfirmModal({
     return swapData.transaction.estimatedGas
   }, [swapData])
 
+  const simulationPassed = swapData?.simulationPassed ?? false
+
   if (!isOpen) return null
 
   return (
@@ -191,6 +193,12 @@ export function SwapConfirmModal({
               </div>
             )}
           </div>
+
+          {!simulationPassed && swapData && (
+            <div className="error-message" style={{ marginTop: '16px', fontSize: '13px' }}>
+              ⚠️ On-chain simulation could not verify this transaction. The swap may fail if pool liquidity is insufficient.
+            </div>
+          )}
 
           {error && (
             <div className="error-message" style={{ marginTop: '16px' }}>

@@ -761,7 +761,10 @@ export const buildServer = async () => {
                     })
                     estimatedGas = (estimatedGas * 120n) / 100n
                 } catch {
-                    // Gas estimation may fail for unusual token storage layouts
+                    if (simulationPassed) {
+                        const callCount = transaction.executor?.calls.length ?? 1
+                        estimatedGas = BigInt(150_000 + callCount * 180_000)
+                    }
                 }
             }
         } catch (error) {
