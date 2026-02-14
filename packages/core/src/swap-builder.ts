@@ -411,8 +411,12 @@ export class SwapBuilder {
       tokensToFlush.add(chain.wrappedNativeAddress)
     }
 
+    const userSlippageBps = quote.amountOut > 0n
+      ? ((quote.amountOut - amountOutMin) * 10000n) / quote.amountOut
+      : 50n
+    const splitLegSlippageBps = userSlippageBps < 100n ? 100n : userSlippageBps
+
     let allocatedIn = 0n
-    let allocatedMinOut = 0n
 
     for (let legIdx = 0; legIdx < splits.length; legIdx++) {
       const leg = splits[legIdx]!
@@ -421,15 +425,12 @@ export class SwapBuilder {
 
       const legAmountIn = isLastLeg
         ? quote.amountIn - allocatedIn
-        : (quote.amountIn * BigInt(leg.ratioBps)) / 10000n
+        : legQuote.amountIn
       allocatedIn += legAmountIn
 
-      const legMinOut = isLastLeg
-        ? amountOutMin - allocatedMinOut
-        : quote.amountOut > 0n
-          ? (amountOutMin * legQuote.amountOut) / quote.amountOut
-          : 0n
-      allocatedMinOut += legMinOut
+      const legMinOut = legQuote.amountOut > 0n
+        ? legQuote.amountOut - (legQuote.amountOut * splitLegSlippageBps) / 10000n
+        : 0n
 
       let availableAmount = legAmountIn
 
