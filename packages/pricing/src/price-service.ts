@@ -4,6 +4,7 @@ import { defaultAmountForDecimals } from './units'
 import { selectBestQuote } from './route-planner'
 import { compareQuotes } from './quote-math'
 import { findBestSplit, type SplitOptimizerConfig } from './split-optimizer'
+import { Q18 } from './math'
 import type { ChainClientProvider, QuoteResult } from './types'
 import type { TokenService } from './token-service'
 import { PoolDiscovery } from './pool-discovery'
@@ -91,7 +92,10 @@ export class PriceService {
     const shouldSplit = enableSplit !== false && this.splitConfig !== null
     if (shouldSplit && candidates.length >= 2) {
       const sorted = [...candidates].sort(compareQuotes)
-      const splitResult = findBestSplit(sorted, amountIn, this.splitConfig!)
+
+      const nativeToOutputPriceQ18 = this.resolveNativeToOutputPrice(chain, tokenOut, sorted)
+      const splitConfig = { ...this.splitConfig!, nativeToOutputPriceQ18 }
+      const splitResult = findBestSplit(sorted, amountIn, splitConfig)
 
       if (splitResult) {
         const remaining = sorted.filter((q) => q !== sorted[0]).sort(compareQuotes)
@@ -155,5 +159,45 @@ export class PriceService {
       tokenIn,
       tokenOut,
     }
+  }
+
+  private resolveNativeToOutputPrice(
+    chain: ChainConfig,
+    tokenOut: TokenMetadata,
+    candidates: PriceQuote[],
+  ): bigint | undefined {
+    const wrappedNative = chain.wrappedNativeAddress?.toLowerCase()
+    if (!wrappedNative) return undefined
+
+    // Output token IS the wrapped native token → 1:1
+    if (tokenOut.address.toLowerCase() === wrappedNative) {
+      return Q18
+    }
+
+    // Look through multi-hop candidates for a route that uses wrapped native as intermediate
+    for (const q of candidates) {
+      for (let i = 0; i < q.sources.length; i++) {
+        const source = q.sources[i]!
+        const hopOut = q.path[i + 1]
+        const hopIn = q.path[i]
+        if (!hopOut || !hopIn) continue
+
+        // Found a hop: WETH/WBNB → outputToken (or intermediate that eventually leads to outputToken)
+        if (hopIn.address.toLowerCase() === wrappedNative && hopOut.address.toLowerCase() === tokenOut.address.toLowerCase()) {
+          return source.amountIn > 0n
+            ? (source.amountOut * Q18 * 10n ** BigInt(hopIn.decimals)) / (source.amountIn * 10n ** BigInt(hopOut.decimals))
+            : undefined
+        }
+
+        // Found a hop: outputToken → WETH/WBNB (inverse)
+        if (hopOut.address.toLowerCase() === wrappedNative && hopIn.address.toLowerCase() === tokenOut.address.toLowerCase()) {
+          return source.amountOut > 0n
+            ? (source.amountIn * Q18 * 10n ** BigInt(hopOut.decimals)) / (source.amountOut * 10n ** BigInt(hopIn.decimals))
+            : undefined
+        }
+      }
+    }
+
+    return undefined
   }
 }

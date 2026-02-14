@@ -266,6 +266,14 @@ export const recomputeQuoteForAmount = (
       const reserveOut = isToken0In ? source.reserves.reserve1 : source.reserves.reserve0
       const protocol = source.dexId.startsWith('pancake') ? 'pancakeswap' : 'uniswap'
       amountOut = getV2AmountOut(rollingAmountIn, reserveIn, reserveOut, protocol)
+    } else if (
+      source.reserves.liquidity !== undefined && source.reserves.liquidity > 0n &&
+      source.reserves.sqrtPriceX96 !== undefined && source.reserves.sqrtPriceX96 > 0n &&
+      source.reserves.token0
+    ) {
+      const zeroForOne = tokenIn.address.toLowerCase() === source.reserves.token0.toLowerCase()
+      const fee = source.feeTier ?? 3000
+      amountOut = estimateV3AmountOut(source.reserves.sqrtPriceX96, source.reserves.liquidity, rollingAmountIn, fee, zeroForOne)
     } else if (source.reserves.liquidity !== undefined && source.reserves.liquidity > 0n) {
       if (source.amountIn === 0n || source.amountOut === 0n) return null
       amountOut = (rollingAmountIn * source.amountOut) / source.amountIn

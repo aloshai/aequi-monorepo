@@ -1,8 +1,11 @@
 import type { PriceQuote, SplitLeg } from '@aequi/core'
-import { recomputeQuoteForAmount, estimateGasForRoute, computeExecutionPriceQ18 } from './quote-math'
-import { chainMultiplyQ18, minBigInt } from './math'
+import { recomputeQuoteForAmount, computeExecutionPriceQ18 } from './quote-math'
+import { Q18 } from './math'
+import { marginalOutputForQuote } from './marginal'
 
 const GAS_PER_SPLIT_OVERHEAD = 80000n
+const Q128 = 1n << 128n
+const MIN_ALLOCATION = 1n
 
 const routeSignature = (quote: PriceQuote): string =>
   quote.sources.map((s) => `${s.dexId}:${s.poolAddress}`).join('|')
@@ -20,37 +23,139 @@ const deduplicateRoutes = (quotes: PriceQuote[], maxRoutes: number): PriceQuote[
   return unique
 }
 
-const generateSplitRatios = (splitCount: number): number[][] => {
-  const step = 1000 // 10% in BPS
-  const total = 10000
-
-  if (splitCount === 2) {
-    const combos: number[][] = []
-    for (let a = step; a <= total - step; a += step) {
-      combos.push([a, total - a])
-    }
-    return combos
-  }
-
-  if (splitCount === 3) {
-    const combos: number[][] = []
-    for (let a = step; a <= total - 2 * step; a += step) {
-      for (let b = step; b <= total - a - step; b += step) {
-        const c = total - a - b
-        if (c >= step) {
-          combos.push([a, b, c])
-        }
-      }
-    }
-    return combos
-  }
-
-  return []
-}
-
 export interface SplitOptimizerConfig {
   maxSplitLegs: number
   minSplitAmountThreshold?: bigint
+  convergenceThresholdBps?: number
+  maxIterations?: number
+  minLegRatioBps?: number
+  nativeToOutputPriceQ18?: bigint
+}
+
+const convertGasToOutputUnits = (
+  gasCostWei: bigint,
+  outputDecimals: number,
+  nativeToOutputPriceQ18: bigint,
+): bigint => {
+  if (nativeToOutputPriceQ18 <= 0n || gasCostWei <= 0n) return 0n
+  const outputFactor = 10n ** BigInt(outputDecimals)
+  // gasCostWei is in native token units (18 decimals)
+  // nativeToOutputPriceQ18 = how many output tokens per 1 native token (Q18 scaled)
+  // result = gasCostWei * price * outputFactor / (Q18 * nativeFactor)
+  // Since native is always 18 decimals, nativeFactor = Q18, they cancel
+  return (gasCostWei * nativeToOutputPriceQ18 * outputFactor) / (Q18 * Q18)
+}
+
+interface LegState {
+  route: PriceQuote
+  allocated: bigint
+  recomputed: PriceQuote | null
+  marginal: bigint
+}
+
+const optimizeSplitMPE = (
+  routes: PriceQuote[],
+  amountIn: bigint,
+  convergenceThresholdBps: number,
+  maxIterations: number,
+  minLegRatioBps: number,
+): { legs: LegState[]; totalOut: bigint } | null => {
+  const n = routes.length
+  if (n < 2 || amountIn <= 0n) return null
+
+  const minAllocation = (amountIn * BigInt(minLegRatioBps)) / 10000n
+
+  // Initialize: equal distribution
+  const legs: LegState[] = []
+  const baseAlloc = amountIn / BigInt(n)
+  let allocated = 0n
+
+  for (let i = 0; i < n; i++) {
+    const alloc = i === n - 1 ? amountIn - allocated : baseAlloc
+    allocated += alloc
+    legs.push({
+      route: routes[i]!,
+      allocated: alloc,
+      recomputed: null,
+      marginal: 0n,
+    })
+  }
+
+  // Recompute initial state
+  for (const leg of legs) {
+    leg.recomputed = recomputeQuoteForAmount(leg.route, leg.allocated)
+    if (!leg.recomputed) return null
+    leg.marginal = marginalOutputForQuote(leg.route, leg.allocated)
+  }
+
+  for (let iter = 0; iter < maxIterations; iter++) {
+    // Find legs with highest and lowest marginal output
+    let highIdx = 0
+    let lowIdx = 0
+    let highMarginal = legs[0]!.marginal
+    let lowMarginal = legs[0]!.marginal
+
+    for (let i = 1; i < legs.length; i++) {
+      if (legs[i]!.marginal > highMarginal) {
+        highMarginal = legs[i]!.marginal
+        highIdx = i
+      }
+      if (legs[i]!.marginal < lowMarginal) {
+        lowMarginal = legs[i]!.marginal
+        lowIdx = i
+      }
+    }
+
+    if (highIdx === lowIdx) break
+
+    // Convergence check: marginal spread relative to average
+    if (highMarginal <= 0n) break
+    const spread = ((highMarginal - lowMarginal) * 10000n) / highMarginal
+    if (spread <= BigInt(convergenceThresholdBps)) break
+
+    // Transfer amount: proportional to marginal difference
+    // Use a damped step: move ~30% of the gap to avoid oscillation
+    const transferBase = (amountIn * spread) / (10000n * 3n)
+    const transfer = transferBase > MIN_ALLOCATION ? transferBase : MIN_ALLOCATION
+
+    // Transfer from low-marginal (overallocated) to high-marginal (underallocated)
+    const actualTransfer = (() => {
+      const maxFromLow = legs[lowIdx]!.allocated - minAllocation
+      if (maxFromLow <= 0n) return 0n
+      return transfer < maxFromLow ? transfer : maxFromLow
+    })()
+
+    if (actualTransfer <= 0n) break
+
+    legs[lowIdx]!.allocated -= actualTransfer
+    legs[highIdx]!.allocated += actualTransfer
+
+    // Recompute affected legs
+    for (const idx of [lowIdx, highIdx]) {
+      const leg = legs[idx]!
+      leg.recomputed = recomputeQuoteForAmount(leg.route, leg.allocated)
+      if (!leg.recomputed) return null
+      leg.marginal = marginalOutputForQuote(leg.route, leg.allocated)
+    }
+  }
+
+  // Prune legs that fell below minimum
+  const activelegs = legs.filter((l) => l.allocated >= minAllocation && l.recomputed)
+  if (activelegs.length < 2) return null
+
+  // Redistribute pruned amounts proportionally
+  const activeTotal = activelegs.reduce((sum, l) => sum + l.allocated, 0n)
+  if (activeTotal < amountIn) {
+    const remainder = amountIn - activeTotal
+    // Give remainder to the leg with highest marginal output
+    const bestLeg = activelegs.reduce((best, l) => l.marginal > best.marginal ? l : best)
+    bestLeg.allocated += remainder
+    bestLeg.recomputed = recomputeQuoteForAmount(bestLeg.route, bestLeg.allocated)
+    if (!bestLeg.recomputed) return null
+  }
+
+  const totalOut = activelegs.reduce((sum, l) => sum + l.recomputed!.amountOut, 0n)
+  return { legs: activelegs, totalOut }
 }
 
 export const findBestSplit = (
@@ -65,77 +170,48 @@ export const findBestSplit = (
   }
 
   const maxLegs = Math.min(Math.max(config.maxSplitLegs, 2), 5)
-  const routes = deduplicateRoutes(candidates, 5)
+  const convergenceThresholdBps = config.convergenceThresholdBps ?? 10
+  const maxIterations = config.maxIterations ?? 50
+  const minLegRatioBps = config.minLegRatioBps ?? 50
+
+  const routes = deduplicateRoutes(candidates, 7)
   if (routes.length < 2) return null
 
   let bestAmountOut = 0n
   let bestSplits: SplitLeg[] | null = null
   let bestGasUnits = 0n
 
-  // 2-way splits
-  for (let i = 0; i < routes.length; i++) {
-    for (let j = i + 1; j < routes.length; j++) {
-      const routeA = routes[i]!
-      const routeB = routes[j]!
+  const maxN = Math.min(maxLegs, routes.length)
 
-      for (const [ratioA, ratioB] of generateSplitRatios(2)) {
-        const amountA = (amountIn * BigInt(ratioA!)) / 10000n
-        const amountB = amountIn - amountA
+  // Try N-way splits from 2 up to maxN
+  for (let n = 2; n <= maxN; n++) {
+    // Generate all combinations of n routes from available routes
+    const combos = combinations(routes, n)
 
-        const recomputedA = recomputeQuoteForAmount(routeA, amountA)
-        const recomputedB = recomputeQuoteForAmount(routeB, amountB)
-        if (!recomputedA || !recomputedB) continue
+    for (const combo of combos) {
+      const result = optimizeSplitMPE(combo, amountIn, convergenceThresholdBps, maxIterations, minLegRatioBps)
+      if (!result) continue
 
-        const totalOut = recomputedA.amountOut + recomputedB.amountOut
-        if (totalOut > bestAmountOut) {
-          bestAmountOut = totalOut
-          bestSplits = [
-            { quote: recomputedA, ratioBps: ratioA! },
-            { quote: recomputedB, ratioBps: ratioB! },
-          ]
-          bestGasUnits = (recomputedA.estimatedGasUnits ?? 0n) +
-            (recomputedB.estimatedGasUnits ?? 0n) +
-            GAS_PER_SPLIT_OVERHEAD
-        }
-      }
-    }
-  }
+      if (result.totalOut > bestAmountOut) {
+        bestAmountOut = result.totalOut
 
-  // 3-way splits
-  if (maxLegs >= 3 && routes.length >= 3) {
-    const threeWayRatios = generateSplitRatios(3)
-    for (let i = 0; i < routes.length; i++) {
-      for (let j = i + 1; j < routes.length; j++) {
-        for (let k = j + 1; k < routes.length; k++) {
-          const routeA = routes[i]!
-          const routeB = routes[j]!
-          const routeC = routes[k]!
+        // Compute BPS ratios from actual allocations
+        const totalAlloc = result.legs.reduce((s, l) => s + l.allocated, 0n)
+        let bpsAssigned = 0
 
-          for (const [ratioA, ratioB, ratioC] of threeWayRatios) {
-            const amountA = (amountIn * BigInt(ratioA!)) / 10000n
-            const amountB = (amountIn * BigInt(ratioB!)) / 10000n
-            const amountC = amountIn - amountA - amountB
+        bestSplits = result.legs.map((leg, idx) => {
+          const isLast = idx === result.legs.length - 1
+          const ratioBps = isLast
+            ? 10000 - bpsAssigned
+            : Number((leg.allocated * 10000n) / totalAlloc)
+          bpsAssigned += ratioBps
+          return { quote: leg.recomputed!, ratioBps }
+        })
 
-            const recomputedA = recomputeQuoteForAmount(routeA, amountA)
-            const recomputedB = recomputeQuoteForAmount(routeB, amountB)
-            const recomputedC = recomputeQuoteForAmount(routeC, amountC)
-            if (!recomputedA || !recomputedB || !recomputedC) continue
-
-            const totalOut = recomputedA.amountOut + recomputedB.amountOut + recomputedC.amountOut
-            if (totalOut > bestAmountOut) {
-              bestAmountOut = totalOut
-              bestSplits = [
-                { quote: recomputedA, ratioBps: ratioA! },
-                { quote: recomputedB, ratioBps: ratioB! },
-                { quote: recomputedC, ratioBps: ratioC! },
-              ]
-              bestGasUnits = (recomputedA.estimatedGasUnits ?? 0n) +
-                (recomputedB.estimatedGasUnits ?? 0n) +
-                (recomputedC.estimatedGasUnits ?? 0n) +
-                GAS_PER_SPLIT_OVERHEAD * 2n
-            }
-          }
-        }
+        bestGasUnits = result.legs.reduce(
+          (sum, l) => sum + (l.recomputed!.estimatedGasUnits ?? 0n),
+          0n,
+        ) + GAS_PER_SPLIT_OVERHEAD * BigInt(n - 1)
       }
     }
   }
@@ -143,20 +219,33 @@ export const findBestSplit = (
   if (!bestSplits || bestAmountOut === 0n) return null
 
   const bestSingle = candidates[0]!
+  if (bestAmountOut <= bestSingle.amountOut) return null
 
-  const singleGasUnits = bestSingle.estimatedGasUnits ?? 0n
+  // Gas-adjusted comparison
   const gasPriceWei = bestSingle.gasPriceWei ?? 0n
-  const singleGasCost = singleGasUnits * gasPriceWei
-  const splitGasCost = bestGasUnits * gasPriceWei
+  if (gasPriceWei > 0n) {
+    const singleGasUnits = bestSingle.estimatedGasUnits ?? 0n
+    const extraGasWei = bestGasUnits > singleGasUnits
+      ? (bestGasUnits - singleGasUnits) * gasPriceWei
+      : 0n
 
-  const splitNetAdvantage = bestAmountOut > bestSingle.amountOut
-    ? bestAmountOut - bestSingle.amountOut
-    : 0n
-  const extraGasCost = splitGasCost > singleGasCost
-    ? splitGasCost - singleGasCost
-    : 0n
+    if (extraGasWei > 0n) {
+      const outputAdvantage = bestAmountOut - bestSingle.amountOut
+      const outputToken = bestSingle.path[bestSingle.path.length - 1]!
 
-  if (splitNetAdvantage <= extraGasCost) return null
+      if (config.nativeToOutputPriceQ18 && config.nativeToOutputPriceQ18 > 0n) {
+        const extraGasInOutputUnits = convertGasToOutputUnits(
+          extraGasWei,
+          outputToken.decimals,
+          config.nativeToOutputPriceQ18,
+        )
+        if (outputAdvantage <= extraGasInOutputUnits) return null
+      } else {
+        // Fallback: if output token is 18 decimals (likely wrapped native), compare directly
+        if (outputToken.decimals === 18 && outputAdvantage <= extraGasWei) return null
+      }
+    }
+  }
 
   // Sort legs by ratio descending — primary leg first
   bestSplits.sort((a, b) => b.ratioBps - a.ratioBps)
@@ -201,5 +290,17 @@ export const findBestSplit = (
     gasPriceWei,
     isSplit: true,
     splits: bestSplits,
+  }
+}
+
+function* combinations<T>(arr: T[], k: number): Generator<T[]> {
+  if (k === 1) {
+    for (const item of arr) yield [item]
+    return
+  }
+  for (let i = 0; i <= arr.length - k; i++) {
+    for (const rest of combinations(arr.slice(i + 1), k - 1)) {
+      yield [arr[i]!, ...rest]
+    }
   }
 }

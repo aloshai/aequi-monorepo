@@ -47,7 +47,12 @@ const poolDiscovery = new PoolDiscovery(tokenService, chainClientProvider, {
     maxHopDepth: appConfig.routing.maxHopDepth,
 })
 const priceService = new PriceService(tokenService, chainClientProvider, poolDiscovery,
-    appConfig.routing.enableSplitRouting ? { maxSplitLegs: appConfig.routing.maxSplitLegs } : null,
+    appConfig.routing.enableSplitRouting ? {
+        maxSplitLegs: appConfig.routing.maxSplitLegs,
+        convergenceThresholdBps: appConfig.routing.splitConvergenceThresholdBps,
+        maxIterations: appConfig.routing.splitMaxIterations,
+        minLegRatioBps: appConfig.routing.splitMinLegRatioBps,
+    } : null,
 )
 const quoteService = new QuoteService(tokenService, priceService)
 const quoteCache = new TtlCache<QuoteResult>(5_000)
