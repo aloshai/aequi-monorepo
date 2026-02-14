@@ -298,9 +298,8 @@ function App() {
 
   const onExecuteSwapFlow = useCallback(async () => {
     if (!quoteResult) { setSwapExecutionError('Request a quote first'); return }
-    const quoteAge = Date.now() - (quoteResult as unknown as SwapResponse).quoteTimestamp * 1000
-    if ('quoteTimestamp' in quoteResult && quoteAge > 60_000) {
-      setSwapExecutionError('Quote is stale — please refresh'); return
+    if (quoteResult.expiresAt && Date.now() / 1000 > quoteResult.expiresAt) {
+      setSwapExecutionError('Quote has expired — please refresh'); return
     }
     if (!address || !isConnected) { setSwapExecutionError('Connect wallet'); return }
     if (chainMismatch) {
@@ -318,6 +317,7 @@ function App() {
         version: quoteForm.version, recipient: address,
         deadlineSeconds: quoteForm.deadlineSeconds.trim() ? Number(quoteForm.deadlineSeconds) : undefined,
         forceMultiHop,
+        quoteId: quoteResult.quoteId,
       })
       setPreparedSwap(swapData)
       setPrepareLoading(false)

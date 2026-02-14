@@ -3,8 +3,8 @@ import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import rateLimit from '@fastify/rate-limit'
 import { z } from 'zod'
-import { isAddress } from 'viem'
-import type { Address } from 'viem'
+import { isAddress, encodeAbiParameters, keccak256, pad, toHex } from 'viem'
+import type { Address, Hex } from 'viem'
 import { validateEnv } from './config/env'
 import { getChainConfig, SUPPORTED_CHAINS } from './config/chains'
 import {
@@ -32,6 +32,8 @@ import { DefaultChainClientProvider } from './services/clients/default-chain-cli
 import { normalizeAddress } from './utils/trading'
 import { HealthService } from './services/health/health-service'
 import { TtlCache } from './utils/ttl-cache'
+import { QuoteStore } from './utils/quote-store'
+import { decodeRevertReason } from './utils/revert-decoder'
 import type { ChainConfig, PriceQuote, QuoteResult, RoutePreference, TokenMetadata } from './types'
 
 // Register default DEX adapters
@@ -56,6 +58,7 @@ const priceService = new PriceService(tokenService, chainClientProvider, poolDis
 )
 const quoteService = new QuoteService(tokenService, priceService)
 const quoteCache = new TtlCache<QuoteResult>(5_000)
+const quoteStore = new QuoteStore(SWAP_QUOTE_TTL_SECONDS * 1000)
 const allowanceService = new AllowanceService(tokenService, chainClientProvider)
 const swapBuilder = new SwapBuilder({
     executorByChain: AEQUI_EXECUTOR_ADDRESS,
@@ -165,6 +168,50 @@ const formatPriceQuote = (chain: ChainConfig, quote: PriceQuote, routePreference
         } : {}),
     }
 }
+const COMMON_BALANCE_BASE_SLOTS = [0n, 2n, 3n, 51n, 101n]
+
+function buildSimulationOverrides(
+    holder: Address,
+    inputToken: Address | null,
+    spender: Address,
+    amountIn: bigint,
+) {
+    const overrides: Array<{ address: Address; balance?: bigint; stateDiff?: Array<{ slot: Hex; value: Hex }> }> = [
+        { address: holder, balance: 10n ** 24n },
+    ]
+
+    if (!inputToken) return overrides
+
+    const balanceValue = pad(toHex(amountIn * 10n), { size: 32 })
+    const maxAllowance = pad(toHex(2n ** 256n - 1n), { size: 32 })
+    const diffs: Array<{ slot: Hex; value: Hex }> = []
+
+    for (const baseSlot of COMMON_BALANCE_BASE_SLOTS) {
+        diffs.push({
+            slot: keccak256(encodeAbiParameters(
+                [{ type: 'address' }, { type: 'uint256' }],
+                [holder, baseSlot],
+            )),
+            value: balanceValue,
+        })
+
+        const innerHash = keccak256(encodeAbiParameters(
+            [{ type: 'address' }, { type: 'uint256' }],
+            [holder, baseSlot + 1n],
+        ))
+        diffs.push({
+            slot: keccak256(encodeAbiParameters(
+                [{ type: 'address' }, { type: 'bytes32' }],
+                [spender, innerHash],
+            )),
+            value: maxAllowance,
+        })
+    }
+
+    overrides.push({ address: inputToken, stateDiff: diffs })
+    return overrides
+}
+
 export const buildServer = async () => {
     const app = Fastify({
         logger: appConfig.server.loggerEnabled ? loggerConfig : false,
@@ -529,12 +576,15 @@ export const buildServer = async () => {
         }
 
         const { quote, amountOutMin, tokenOut, slippageBps } = result
+        const { quoteId, expiresAt } = quoteStore.store(result)
 
         const baseResponse = formatPriceQuote(chain, quote, routePreference)
         const amountOutMinFormatted = formatAmountFromUnits(amountOutMin, tokenOut.decimals)
 
         return {
             ...baseResponse,
+            quoteId,
+            expiresAt,
             amountOutMin: amountOutMin.toString(),
             amountOutMinFormatted,
             slippageBps,
@@ -557,6 +607,7 @@ export const buildServer = async () => {
             deadlineSeconds: z.coerce.number().min(10).max(3600).optional(),
             forceMultiHop: z.boolean().optional(),
             enableSplit: z.boolean().optional(),
+            quoteId: z.string().uuid().optional(),
         })
 
         const parsed = bodySchema.safeParse(request.body)
@@ -603,14 +654,44 @@ export const buildServer = async () => {
         const forceMultiHop = parsed.data.forceMultiHop ?? false
         const enableSplit = parsed.data.enableSplit !== false
 
-        request.log.info({ tokenA: effectiveTokenA, tokenB: effectiveTokenB, amount: parsed.data.amount }, 'Swap request')
+        request.log.info({ tokenA: effectiveTokenA, tokenB: effectiveTokenB, amount: parsed.data.amount, quoteId: parsed.data.quoteId }, 'Swap request')
 
         let quoteResult: QuoteResult | null = null
-        try {
-            quoteResult = await quoteService.getQuote(chain, effectiveTokenA, effectiveTokenB, parsed.data.amount, slippageBps, routePreference, forceMultiHop, enableSplit)
-        } catch (error) {
-            reply.status(400)
-            return { error: 'invalid_request', message: (error as Error).message }
+
+        // Strategy 1: Look up stored quote by quoteId
+        if (parsed.data.quoteId) {
+            const stored = quoteStore.consume(parsed.data.quoteId)
+            if (!stored) {
+                const isExpired = quoteStore.isExpired(parsed.data.quoteId)
+                reply.status(isExpired ? 410 : 404)
+                return {
+                    error: isExpired ? 'quote_expired' : 'quote_not_found',
+                    message: isExpired
+                        ? 'Quote has expired — please request a new quote'
+                        : 'Quote not found — it may have already been used or expired',
+                }
+            }
+
+            // Validate that stored quote matches request params
+            const storedTokenIn = stored.result.tokenIn.address.toLowerCase()
+            const storedTokenOut = stored.result.tokenOut.address.toLowerCase()
+            if (storedTokenIn !== effectiveTokenA || storedTokenOut !== effectiveTokenB) {
+                reply.status(400)
+                return { error: 'quote_mismatch', message: 'Quote tokens do not match request parameters' }
+            }
+
+            quoteResult = stored.result
+            request.log.info({ quoteId: parsed.data.quoteId }, 'Using stored quote')
+        }
+
+        // Strategy 2: Fresh quote (fallback when no quoteId)
+        if (!quoteResult) {
+            try {
+                quoteResult = await quoteService.getQuote(chain, effectiveTokenA, effectiveTokenB, parsed.data.amount, slippageBps, routePreference, forceMultiHop, enableSplit)
+            } catch (error) {
+                reply.status(400)
+                return { error: 'invalid_request', message: (error as Error).message }
+            }
         }
 
         if (!quoteResult) {
@@ -639,6 +720,8 @@ export const buildServer = async () => {
         let latestBlockNumber: bigint | null = null
         let latestBlockTimestamp: bigint | null = null
         let estimatedGas: bigint | undefined
+        let simulationPassed = false
+
         try {
             const client = await chainClientProvider.getClient(chain)
             const latestBlock = await client.getBlock()
@@ -646,20 +729,43 @@ export const buildServer = async () => {
             latestBlockTimestamp = latestBlock.timestamp ?? null
 
             if (transaction.call) {
+                const stateOverride = buildSimulationOverrides(
+                    recipient,
+                    useNativeInput ? null : effectiveTokenA,
+                    transaction.spender,
+                    transaction.amountIn,
+                )
+
+                try {
+                    await client.call({
+                        account: recipient,
+                        to: transaction.call.to,
+                        data: transaction.call.data,
+                        value: transaction.call.value,
+                        stateOverride,
+                    })
+                    simulationPassed = true
+                } catch (simError: any) {
+                    const revertData = simError?.data ?? simError?.cause?.data
+                    const decoded = decodeRevertReason(revertData)
+                    request.log.warn({ decoded }, 'Simulation reverted (non-blocking)')
+                }
+
                 try {
                     estimatedGas = await client.estimateGas({
                         account: recipient,
                         to: transaction.call.to,
                         data: transaction.call.data,
                         value: transaction.call.value,
+                        stateOverride,
                     })
                     estimatedGas = (estimatedGas * 120n) / 100n
-                } catch (gasError) {
-                    request.log.warn({ err: gasError }, 'failed to estimate gas')
+                } catch {
+                    // Gas estimation may fail for unusual token storage layouts
                 }
             }
         } catch (error) {
-            request.log.warn({ err: error }, 'failed to load latest block metadata for quote')
+            request.log.warn({ err: error }, 'Failed to load block metadata or run simulation')
         }
 
         const quoteTimestamp = Math.floor(Date.now() / 1000)
@@ -680,6 +786,7 @@ export const buildServer = async () => {
             quoteValidSeconds: SWAP_QUOTE_TTL_SECONDS,
             quoteBlockNumber: latestBlockNumber ? latestBlockNumber.toString() : null,
             quoteBlockTimestamp: latestBlockTimestamp ? Number(latestBlockTimestamp) : null,
+            simulationPassed,
             transaction: {
                 kind: transaction.kind,
                 dexId: transaction.dexId,

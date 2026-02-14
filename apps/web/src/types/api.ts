@@ -90,6 +90,8 @@ export interface PriceResponse {
 }
 
 export interface QuoteResponse extends PriceResponse {
+  quoteId: string
+  expiresAt: number
   amountOutMin: string
   amountOutMinFormatted: string
   slippageBps: number
@@ -171,5 +173,6 @@ export interface SwapResponse extends QuoteResponse {
   quoteValidSeconds: number
   quoteBlockNumber: string | null
   quoteBlockTimestamp: number | null
+  simulationPassed: boolean
   transaction: SwapTransactionPayload
 }

@@ -91,4 +91,6 @@ export interface QuoteResult {
   tokenIn: TokenMetadata
   tokenOut: TokenMetadata
   estimatedGas?: bigint
+  quoteId?: string
+  expiresAt?: number
 }

@@ -62,6 +62,7 @@ export interface SwapParams {
   recipient: string
   deadlineSeconds?: number
   forceMultiHop?: boolean
+  quoteId?: string
 }
 
 export const fetchExchangeDirectory = async (params: ExchangeParams): Promise<ExchangeResponse> => {

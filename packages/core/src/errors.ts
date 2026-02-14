@@ -24,6 +24,12 @@ export enum ErrorCode {
   INSUFFICIENT_BALANCE = 'insufficient_balance',
   INSUFFICIENT_ALLOWANCE = 'insufficient_allowance',
   
+  // Quote Lifecycle Errors
+  QUOTE_NOT_FOUND = 'quote_not_found',
+  QUOTE_EXPIRED = 'quote_expired',
+  QUOTE_MISMATCH = 'quote_mismatch',
+  SIMULATION_FAILED = 'simulation_failed',
+  
   // Configuration Errors
   MISSING_CONFIG = 'missing_config',
   INVALID_CONFIG = 'invalid_config',
