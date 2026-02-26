@@ -48,23 +48,8 @@ RUN echo "=== Nginx html folder contents ===" && \
     ls -laR /usr/share/nginx/html/ && \
     if [ ! -f /usr/share/nginx/html/index.html ]; then echo "ERROR: index.html missing in nginx!"; exit 1; fi
 
-# Create nginx config that accepts any server name
-RUN echo 'server { \
-    listen 80 default_server; \
-    listen [::]:80 default_server; \
-    server_name _; \
-    root /usr/share/nginx/html; \
-    index index.html; \
-    \
-    location / { \
-        try_files $uri $uri/ /index.html =404; \
-    } \
-    \
-    error_page 404 /index.html; \
-}' > /etc/nginx/conf.d/default.conf
-
-# Show nginx config
-RUN echo "=== Nginx config ===" && cat /etc/nginx/conf.d/default.conf
+# Copy nginx config with security headers
+COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 

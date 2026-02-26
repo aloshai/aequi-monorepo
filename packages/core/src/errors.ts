@@ -87,11 +87,6 @@ export class AequiError extends Error {
       statusCode: this.statusCode,
       retryable: this.retryable,
       timestamp: this.timestamp,
-      metadata: this.metadata,
-    }
-    
-    if (this.cause) {
-      result.cause = (this.cause as Error).message
     }
     
     return result

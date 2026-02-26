@@ -38,19 +38,20 @@ describe('AequiError', () => {
       message: 'Test error',
       statusCode: 400,
       retryable: false,
-      metadata: { field: 'tokenA' },
     })
     expect(json.timestamp).toBeGreaterThan(0)
+    expect(json.metadata).toBeUndefined()
+    expect(json.cause).toBeUndefined()
   })
 
-  it('should include cause in JSON when present', () => {
+  it('should not include cause in JSON (sanitized)', () => {
     const cause = new Error('Original error')
     const error = new AequiError('Wrapped error', ErrorCode.RPC_ERROR, {
       cause,
     })
 
     const json = error.toJSON()
-    expect(json.cause).toBe('Original error')
+    expect(json.cause).toBeUndefined()
   })
 })
 

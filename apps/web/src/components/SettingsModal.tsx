@@ -10,6 +10,8 @@ interface SettingsModalProps {
   version: 'auto' | 'v2' | 'v3'
   setVersion: (value: 'auto' | 'v2' | 'v3') => void
   recommendedSlippageBps?: number
+  approvalMode: 'infinite' | 'exact'
+  setApprovalMode: (value: 'infinite' | 'exact') => void
 }
 
 export function SettingsModal({
@@ -22,6 +24,8 @@ export function SettingsModal({
   version,
   setVersion,
   recommendedSlippageBps,
+  approvalMode,
+  setApprovalMode,
 }: SettingsModalProps) {
   const [customSlippage, setCustomSlippage] = useState('')
   const [deadlineMinutes, setDeadlineMinutes] = useState('')
@@ -53,7 +57,8 @@ export function SettingsModal({
     const val = e.target.value
     setCustomSlippage(val)
     if (val && !isNaN(Number(val))) {
-      setSlippageBps((Number(val) * 100).toString())
+      const clamped = Math.min(Math.max(Number(val), 0), 50)
+      setSlippageBps((clamped * 100).toString())
     }
   }
 
@@ -61,7 +66,8 @@ export function SettingsModal({
     const val = e.target.value
     setDeadlineMinutes(val)
     if (val && !isNaN(Number(val))) {
-      setDeadlineSeconds((Number(val) * 60).toString())
+      const clamped = Math.min(Math.max(Number(val), 1), 60)
+      setDeadlineSeconds((clamped * 60).toString())
     }
   }
 
@@ -135,6 +141,24 @@ export function SettingsModal({
                 {v.toUpperCase()}
               </button>
             ))}
+          </div>
+        </div>
+
+        <div className="settings-section">
+          <label className="settings-label">Token Approval</label>
+          <div className="routing-options">
+            <button
+              className={`routing-btn ${approvalMode === 'exact' ? 'active' : ''}`}
+              onClick={() => setApprovalMode('exact')}
+            >
+              Exact Amount
+            </button>
+            <button
+              className={`routing-btn ${approvalMode === 'infinite' ? 'active' : ''}`}
+              onClick={() => setApprovalMode('infinite')}
+            >
+              Unlimited
+            </button>
           </div>
         </div>
       </div>

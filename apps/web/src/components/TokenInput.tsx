@@ -10,6 +10,7 @@ interface TokenInputProps {
   balance?: string
   readOnly?: boolean
   showShortcuts?: boolean
+  onQuarter?: () => void
   onHalf?: () => void
   onMax?: () => void
   shortcutsDisabled?: boolean
@@ -24,6 +25,7 @@ export function TokenInput({
   balance,
   readOnly,
   showShortcuts,
+  onQuarter,
   onHalf,
   onMax,
   shortcutsDisabled,
@@ -55,14 +57,18 @@ export function TokenInput({
         <input
           className="token-amount-input"
           placeholder="0"
+          inputMode="decimal"
           value={amount}
-          onChange={onAmountChange ? (e) => onAmountChange(e.target.value) : undefined}
+          onChange={onAmountChange ? (e) => {
+            const v = e.target.value
+            if (v === '' || /^\d*\.?\d*$/.test(v)) onAmountChange(v)
+          } : undefined}
           readOnly={readOnly}
         />
       </div>
       {showShortcuts && (
         <div className="token-input__shortcuts">
-          <button className="shortcut-btn" onClick={onHalf} disabled={shortcutsDisabled}>25%</button>
+          <button className="shortcut-btn" onClick={onQuarter} disabled={shortcutsDisabled}>25%</button>
           <button className="shortcut-btn" onClick={onHalf} disabled={shortcutsDisabled}>50%</button>
           <button className="shortcut-btn" onClick={onMax} disabled={shortcutsDisabled}>Max</button>
         </div>

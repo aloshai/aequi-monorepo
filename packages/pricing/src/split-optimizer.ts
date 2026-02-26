@@ -349,7 +349,10 @@ export const findBestSplit = (
         )
         if (outputAdvantage <= extraGasInOutputUnits) return null
       } else {
-        if (outputToken.decimals === 18 && outputAdvantage <= extraGasWei) return null
+        const scaledGas = outputToken.decimals >= 18
+          ? extraGasWei * (10n ** BigInt(outputToken.decimals - 18))
+          : extraGasWei / (10n ** BigInt(18 - outputToken.decimals))
+        if (outputAdvantage <= scaledGas) return null
       }
     }
   }

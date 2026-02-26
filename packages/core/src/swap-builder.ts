@@ -91,6 +91,10 @@ export class SwapBuilder {
       throw new Error('Quote is missing source information')
     }
 
+    if (!params.recipient || params.recipient === '0x0000000000000000000000000000000000000000') {
+      throw new Error('Invalid recipient address')
+    }
+
     const deadlineSeconds = params.deadlineSeconds > 0 ? params.deadlineSeconds : 180
     const deadline = Math.floor(Date.now() / 1000) + deadlineSeconds
     const boundedSlippage = clampSlippage(params.slippageBps)
@@ -573,7 +577,8 @@ export class SwapBuilder {
     if (totalExpectedOut === 0n || hopExpectedOut === 0n) {
       return 0n
     }
-    return (hopExpectedOut * totalMinOut) / totalExpectedOut
+    const computed = (hopExpectedOut * totalMinOut) / totalExpectedOut
+    return computed > 0n ? computed : 1n
   }
 
   private encodeV2SwapCall(

@@ -130,7 +130,7 @@ export class PriceService {
     try {
       gasPriceWei = await client.getGasPrice()
     } catch {
-      gasPriceWei = null
+      gasPriceWei = 30_000_000_000n
     }
 
     const [directQuotes, multiHopQuotes] = await Promise.all([

@@ -121,12 +121,17 @@ export class TokenService {
       throw new Error(`Failed to fetch decimals for token ${address} on chain ${chain.name}`)
     }
 
+    const decimals = Number(decimalsRaw)
+    if (decimals < 0 || decimals > 30) {
+      throw new Error(`Token ${address} has unsupported decimals value: ${decimals}`)
+    }
+
     const metadata: TokenMetadata = {
       chainId: chain.id,
       address: normalized,
       symbol,
       name,
-      decimals: Number(decimalsRaw),
+      decimals,
       totalSupply,
     }
 

@@ -151,6 +151,7 @@ function App() {
   const [swapExecutionError, setSwapExecutionError] = useState<string | null>(null)
   const [swapHash, setSwapHash] = useState<string | null>(null)
   const [, setSwapHistory] = useState(() => getSwapHistory())
+  const [approvalMode, setApprovalMode] = useState<'infinite' | 'exact'>('exact')
 
   useEffect(() => {
     const presets = tokenDirectory[selectedChain] || []
@@ -223,6 +224,11 @@ function App() {
   const handleSetHalf = useCallback(() => {
     if (!quoteForm.tokenA) return
     setQuoteForm(prev => ({ ...prev, amount: formatBigIntAmount(balanceA / 2n, quoteForm.tokenA!.decimals, 18) }))
+  }, [balanceA, quoteForm.tokenA])
+
+  const handleSetQuarter = useCallback(() => {
+    if (!quoteForm.tokenA) return
+    setQuoteForm(prev => ({ ...prev, amount: formatBigIntAmount(balanceA / 4n, quoteForm.tokenA!.decimals, 18) }))
   }, [balanceA, quoteForm.tokenA])
 
   useEffect(() => { fetchExchangeDirectory({ chain: selectedChain }).catch(() => {}) }, [selectedChain])
@@ -340,9 +346,11 @@ function App() {
         if (entry) { try { if (BigInt(entry.allowance) >= BigInt(preparedSwap.transaction.amountIn)) needsApproval = false } catch {} }
       }
       if (needsApproval) {
-        setApprovalLoading('infinite')
+        const useInfinite = approvalMode === 'infinite'
+        setApprovalLoading(useInfinite ? 'infinite' : 'exact')
         const approvalData = await requestApproveCalldata({
-          chain: selectedChain, token: inputToken, spender: preparedSwap.transaction.spender, infinite: true,
+          chain: selectedChain, token: inputToken, spender: preparedSwap.transaction.spender,
+          ...(useInfinite ? { infinite: true } : { amount: preparedSwap.transaction.amountIn }),
         })
         const txTarget = approvalData.transaction?.to; const txData = approvalData.transaction?.data
         if (!txTarget || !txData) throw new Error('Approval payload missing')
@@ -397,7 +405,7 @@ function App() {
     } finally {
       setApprovalLoading(null); setSwapExecutionLoading(false)
     }
-  }, [preparedSwap, refreshAllowance, selectedChain, selectedChainId, sendTransactionAsync, ensureAllowanceSynced, approvalLoading, swapHash])
+  }, [preparedSwap, refreshAllowance, selectedChain, selectedChainId, sendTransactionAsync, ensureAllowanceSynced, approvalLoading, swapHash, approvalMode])
 
   const outputDisplay = quoteResult
     ? formatBigIntAmount(BigInt(quoteResult.amountOut), quoteForm.tokenB?.decimals || 18)
@@ -432,6 +440,7 @@ function App() {
             onTokenSelect={() => { setSelectingToken('A'); setTokenModalOpen(true) }}
             balance={isConnected && quoteForm.tokenA ? `${fmtA} ${quoteForm.tokenA.symbol}` : undefined}
             showShortcuts={isConnected}
+            onQuarter={handleSetQuarter}
             onHalf={handleSetHalf}
             onMax={handleSetMax}
             shortcutsDisabled={!isConnected || !quoteForm.tokenA || balanceA === 0n}
@@ -535,6 +544,8 @@ function App() {
         version={quoteForm.version}
         setVersion={(v) => setQuoteForm(prev => ({ ...prev, version: v }))}
         recommendedSlippageBps={quoteResult?.recommendedSlippageBps}
+        approvalMode={approvalMode}
+        setApprovalMode={setApprovalMode}
       />
 
       <SwapConfirmModal

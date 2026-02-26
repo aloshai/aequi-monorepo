@@ -36,6 +36,9 @@ import { QuoteStore } from './utils/quote-store'
 import { decodeRevertReason } from './utils/revert-decoder'
 import type { ChainConfig, PriceQuote, QuoteResult, RoutePreference, TokenMetadata } from './types'
 
+// Validate environment early — before singleton construction
+validateEnv()
+
 // Register default DEX adapters
 registerDefaultAdapters()
 
@@ -221,7 +224,7 @@ export const buildServer = async () => {
 
     const allowedOrigins = process.env.CORS_ORIGIN
         ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
-        : true
+        : (process.env.NODE_ENV === 'production' ? false : true)
     await app.register(cors, { origin: allowedOrigins })
     await app.register(rateLimit, {
         max: appConfig.rateLimit.max,
@@ -689,6 +692,13 @@ export const buildServer = async () => {
                 return { error: 'quote_mismatch', message: 'Quote tokens do not match request parameters' }
             }
 
+            const storedAmountIn = stored.result.quote.amountIn.toString()
+            const requestAmountIn = parseAmountToUnits(parsed.data.amount, stored.result.tokenIn.decimals).toString()
+            if (storedAmountIn !== requestAmountIn) {
+                reply.status(400)
+                return { error: 'quote_mismatch', message: 'Quote amount does not match request parameters' }
+            }
+
             quoteResult = stored.result
             request.log.info({ quoteId: parsed.data.quoteId }, 'Using stored quote')
         }
@@ -748,9 +758,9 @@ export const buildServer = async () => {
                 try {
                     await client.call({
                         account: recipient,
-                        to: simCall.to,
-                        data: simCall.data,
-                        value: simCall.value,
+                        to: transaction.call.to,
+                        data: transaction.call.data,
+                        value: transaction.call.value,
                         stateOverride,
                     })
                     simulationPassed = true
@@ -763,9 +773,9 @@ export const buildServer = async () => {
                 try {
                     estimatedGas = await client.estimateGas({
                         account: recipient,
-                        to: simCall.to,
-                        data: simCall.data,
-                        value: simCall.value,
+                        to: transaction.call.to,
+                        data: transaction.call.data,
+                        value: transaction.call.value,
                         stateOverride,
                     })
                     estimatedGas = (estimatedGas * 120n) / 100n
@@ -854,13 +864,6 @@ export const buildServer = async () => {
 }
 
 export const startServer = async () => {
-    try {
-        validateEnv()
-    } catch (error) {
-        console.error('Environment validation failed:', (error as Error).message)
-        process.exit(1)
-    }
-
     const app = await buildServer()
     const port = appConfig.server.port
     const host = appConfig.server.host

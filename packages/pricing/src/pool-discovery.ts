@@ -495,7 +495,9 @@ export class PoolDiscovery {
                 token0: data.token0,
               })
             })
-          }).catch(() => {})
+          }).catch((err) => {
+            console.warn('[AequiLens] V2 batch failed, falling back to multicall', err?.message ?? err)
+          })
         )
       }
 
@@ -517,7 +519,9 @@ export class PoolDiscovery {
                 token1: data.token1,
               })
             })
-          }).catch(() => {})
+          }).catch((err) => {
+            console.warn('[AequiLens] V3 batch failed, falling back to multicall', err?.message ?? err)
+          })
         )
       }
 
@@ -1004,7 +1008,7 @@ export class PoolDiscovery {
                 amountOut: leg.amountOut,
                 midPrices: [...partial.midPrices, leg.midPriceQ18],
                 execPrices: [...partial.execPrices, leg.executionPriceQ18],
-                priceImpactBps: partial.priceImpactBps + leg.priceImpactBps,
+                priceImpactBps: Math.round(10000 - (10000 - partial.priceImpactBps) * (10000 - leg.priceImpactBps) / 10000),
                 liquidityScore: minBigInt(partial.liquidityScore, leg.liquidityScore),
                 gasPriceWei: partial.gasPriceWei ?? leg.gasPriceWei,
               })

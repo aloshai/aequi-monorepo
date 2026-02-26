@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { SwapResponse } from '../types/api'
 import { getTokenLogo } from '../utils/logos'
 
@@ -66,6 +66,8 @@ export function SwapConfirmModal({
   }, [swapData])
 
   const simulationPassed = swapData?.simulationPassed ?? false
+  const isExtremeImpact = Number(priceImpact) > 15
+  const [impactAccepted, setImpactAccepted] = useState(false)
 
   if (!isOpen) return null
 
@@ -171,6 +173,16 @@ export function SwapConfirmModal({
             {Number(priceImpact) > 15 && (
               <div className="error-message" style={{ marginTop: '8px', fontSize: '13px' }}>
                 ⚠️ Price impact is extremely high ({priceImpact}%). You may lose a significant portion of your funds.
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={impactAccepted} onChange={(e) => setImpactAccepted(e.target.checked)} />
+                  I understand the risk and wish to proceed
+                </label>
+              </div>
+            )}
+
+            {Number(priceImpact) > 5 && Number(priceImpact) <= 15 && (
+              <div className="error-message" style={{ marginTop: '8px', fontSize: '13px', background: 'rgba(255, 170, 0, 0.1)' }}>
+                ⚠️ Price impact is high ({priceImpact}%). Please verify the trade details.
               </div>
             )}
 
@@ -214,9 +226,9 @@ export function SwapConfirmModal({
           <button 
             className="modal-btn modal-btn-primary" 
             onClick={onConfirm}
-            disabled={loading || !swapData}
+            disabled={loading || !swapData || (isExtremeImpact && !impactAccepted)}
           >
-            {loading ? 'Processing...' : 'Execute Swap'}
+            {loading ? 'Processing...' : isExtremeImpact && !impactAccepted ? 'Accept Risk to Swap' : 'Execute Swap'}
           </button>
         </div>
       </div>

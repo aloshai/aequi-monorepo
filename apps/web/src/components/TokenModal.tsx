@@ -55,6 +55,7 @@ export function TokenModal({ isOpen, onClose, onSelect, defaultTokens }: TokenMo
   if (!isOpen) return null
 
   const displayTokens = searchQuery ? searchResults : defaultTokens
+  const isExternalSearch = !!searchQuery && searchResults.length > 0
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -63,6 +64,12 @@ export function TokenModal({ isOpen, onClose, onSelect, defaultTokens }: TokenMo
           <h3 className="modal-title">Select a token</h3>
           <button className="close-btn" onClick={onClose}>&times;</button>
         </div>
+
+        {isExternalSearch && (
+          <div className="error-message" style={{ margin: '0 16px 8px', fontSize: '12px', padding: '8px' }}>
+            These tokens are from an external source and have not been verified. Importing an unverified token may result in loss of funds.
+          </div>
+        )}
 
         <div className="search-container">
           <input
