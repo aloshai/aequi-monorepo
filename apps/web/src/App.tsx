@@ -132,7 +132,7 @@ function App() {
   }, [selectedChainId, switchChainAsync])
 
   const [quoteForm, setQuoteForm] = useState<QuoteFormState>({
-    tokenA: null, tokenB: null, amount: '', slippageBps: '50', version: 'auto', deadlineSeconds: '600',
+    tokenA: null, tokenB: null, amount: '', slippageBps: 'auto', version: 'auto', deadlineSeconds: '600',
   })
   const [forceMultiHop, setForceMultiHop] = useState(false)
 
@@ -237,7 +237,7 @@ function App() {
     try {
       const data = await fetchSwapQuote({
         chain: selectedChain, tokenA: tA, tokenB: tB, amount: amt,
-        slippageBps: quoteForm.slippageBps.trim() || undefined,
+        slippageBps: quoteForm.slippageBps === 'auto' ? 'auto' : (quoteForm.slippageBps.trim() || undefined),
         version: quoteForm.version,
         forceMultiHop: forceMultiHop ? 'true' as const : undefined,
       })
@@ -313,7 +313,7 @@ function App() {
     try {
       const swapData = await requestSwapTransaction({
         chain: selectedChain, tokenA: tA, tokenB: tB, amount: amt,
-        slippageBps: quoteForm.slippageBps.trim() ? Number(quoteForm.slippageBps) : undefined,
+        slippageBps: quoteForm.slippageBps === 'auto' ? undefined : (quoteForm.slippageBps.trim() ? Number(quoteForm.slippageBps) : undefined),
         version: quoteForm.version, recipient: address,
         deadlineSeconds: quoteForm.deadlineSeconds.trim() ? Number(quoteForm.deadlineSeconds) : undefined,
         forceMultiHop,
@@ -534,6 +534,7 @@ function App() {
         setDeadlineSeconds={(v) => setQuoteForm(prev => ({ ...prev, deadlineSeconds: v }))}
         version={quoteForm.version}
         setVersion={(v) => setQuoteForm(prev => ({ ...prev, version: v }))}
+        recommendedSlippageBps={quoteResult?.recommendedSlippageBps}
       />
 
       <SwapConfirmModal

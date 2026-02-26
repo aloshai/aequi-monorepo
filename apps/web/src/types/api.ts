@@ -95,6 +95,7 @@ export interface QuoteResponse extends PriceResponse {
   amountOutMin: string
   amountOutMinFormatted: string
   slippageBps: number
+  recommendedSlippageBps?: number
   offers?: PriceResponse[]
 }
 

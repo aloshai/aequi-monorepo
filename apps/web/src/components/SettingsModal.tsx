@@ -9,6 +9,7 @@ interface SettingsModalProps {
   setDeadlineSeconds: (value: string) => void
   version: 'auto' | 'v2' | 'v3'
   setVersion: (value: 'auto' | 'v2' | 'v3') => void
+  recommendedSlippageBps?: number
 }
 
 export function SettingsModal({
@@ -19,21 +20,24 @@ export function SettingsModal({
   deadlineSeconds,
   setDeadlineSeconds,
   version,
-  setVersion
+  setVersion,
+  recommendedSlippageBps,
 }: SettingsModalProps) {
   const [customSlippage, setCustomSlippage] = useState('')
   const [deadlineMinutes, setDeadlineMinutes] = useState('')
 
   useEffect(() => {
     if (isOpen) {
-      // Initialize local state from props
-      const slippage = Number(slippageBps) / 100
-      if ([0.1, 0.5, 1.0].includes(slippage)) {
+      if (slippageBps === 'auto') {
         setCustomSlippage('')
       } else {
-        setCustomSlippage(slippage.toString())
+        const slippage = Number(slippageBps) / 100
+        if ([0.1, 0.5, 1.0].includes(slippage)) {
+          setCustomSlippage('')
+        } else {
+          setCustomSlippage(slippage.toString())
+        }
       }
-
       setDeadlineMinutes((Number(deadlineSeconds) / 60).toString())
     }
   }, [isOpen, slippageBps, deadlineSeconds])
@@ -61,7 +65,9 @@ export function SettingsModal({
     }
   }
 
-  const currentSlippage = Number(slippageBps) / 100
+  const isAuto = slippageBps === 'auto'
+  const currentSlippage = isAuto ? 0 : Number(slippageBps) / 100
+  const autoLabel = recommendedSlippageBps != null ? `Auto (${(recommendedSlippageBps / 100).toFixed(1)}%)` : 'Auto'
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -74,10 +80,16 @@ export function SettingsModal({
         <div className="settings-section">
           <label className="settings-label">Slippage Tolerance</label>
           <div className="slippage-options">
+            <button
+              className={`slippage-btn ${isAuto ? 'active' : ''}`}
+              onClick={() => { setSlippageBps('auto'); setCustomSlippage('') }}
+            >
+              {autoLabel}
+            </button>
             {[0.1, 0.5, 1.0].map((val) => (
               <button
                 key={val}
-                className={`slippage-btn ${currentSlippage === val && !customSlippage ? 'active' : ''}`}
+                className={`slippage-btn ${!isAuto && currentSlippage === val && !customSlippage ? 'active' : ''}`}
                 onClick={() => handleSlippageSelect(val)}
               >
                 {val}%

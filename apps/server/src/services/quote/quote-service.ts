@@ -14,6 +14,14 @@ interface Logger {
 
 const noop: Logger = { info() {}, debug() {} }
 
+export function computeRecommendedSlippage(quote: import('@aequi/core').PriceQuote): number {
+  const impactBase = Math.max(quote.priceImpactBps, 30)
+  const hopPenalty = (quote.hopVersions.length - 1) * 15
+  const splitPenalty = quote.isSplit ? 30 : 0
+  const raw = impactBase + hopPenalty + splitPenalty
+  return Math.min(Math.max(raw, 30), 500)
+}
+
 export class QuoteService {
   constructor(
     private readonly tokenService: TokenService,

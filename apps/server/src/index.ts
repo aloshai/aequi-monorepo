@@ -24,7 +24,7 @@ import { registerDefaultAdapters } from '@aequi/dex-adapters'
 import { errorHandler } from './middleware/error-handler'
 import { requestIdHook } from './middleware/request-id'
 import { loggerConfig } from './config/logger'
-import { QuoteService } from './services/quote/quote-service'
+import { QuoteService, computeRecommendedSlippage } from './services/quote/quote-service'
 import { AllowanceService } from './services/tokens/allowance-service'
 import { SwapBuilder } from '@aequi/core'
 import { formatAmountFromUnits, parseAmountToUnits } from './utils/units'
@@ -540,10 +540,11 @@ export const buildServer = async () => {
             return { error: 'invalid_request', message: 'tokenA and tokenB must be different' }
         }
 
-        const slippage = parsed.data.slippageBps ? Number(parsed.data.slippageBps) : 50
-        if (Number.isNaN(slippage)) {
+        const isAutoSlippage = !parsed.data.slippageBps || parsed.data.slippageBps === 'auto'
+        const explicitSlippage = isAutoSlippage ? null : Number(parsed.data.slippageBps)
+        if (explicitSlippage !== null && Number.isNaN(explicitSlippage)) {
             reply.status(400)
-            return { error: 'invalid_amount', message: 'slippageBps must be numeric' }
+            return { error: 'invalid_amount', message: 'slippageBps must be numeric or "auto"' }
         }
 
         let result: QuoteResult | null = null
@@ -558,7 +559,7 @@ export const buildServer = async () => {
                     effectiveTokenA,
                     effectiveTokenB,
                     parsed.data.amount,
-                    slippage,
+                    explicitSlippage ?? 50,
                     routePreference,
                     forceMultiHop,
                     enableSplit,
@@ -575,19 +576,27 @@ export const buildServer = async () => {
             return { error: 'no_route', message: 'No on-chain route found for the requested pair' }
         }
 
-        const { quote, amountOutMin, tokenOut, slippageBps } = result
-        const { quoteId, expiresAt } = quoteStore.store(result)
+        const { quote, tokenOut } = result
+        const recommended = computeRecommendedSlippage(quote)
+        const effectiveSlippage = isAutoSlippage ? recommended : result.slippageBps
+
+        const slippageAmount = (quote.amountOut * BigInt(effectiveSlippage)) / 10000n
+        const effectiveAmountOutMin = quote.amountOut > slippageAmount ? quote.amountOut - slippageAmount : 0n
+
+        const storedResult: QuoteResult = { ...result, amountOutMin: effectiveAmountOutMin, slippageBps: effectiveSlippage }
+        const { quoteId, expiresAt } = quoteStore.store(storedResult)
 
         const baseResponse = formatPriceQuote(chain, quote, routePreference)
-        const amountOutMinFormatted = formatAmountFromUnits(amountOutMin, tokenOut.decimals)
+        const amountOutMinFormatted = formatAmountFromUnits(effectiveAmountOutMin, tokenOut.decimals)
 
         return {
             ...baseResponse,
             quoteId,
             expiresAt,
-            amountOutMin: amountOutMin.toString(),
+            amountOutMin: effectiveAmountOutMin.toString(),
             amountOutMinFormatted,
-            slippageBps,
+            slippageBps: effectiveSlippage,
+            recommendedSlippageBps: recommended,
         }
     })
 
@@ -649,7 +658,7 @@ export const buildServer = async () => {
         }
 
         const slippageInput = Number.isFinite(parsed.data.slippageBps) ? parsed.data.slippageBps! : undefined
-        const slippageBps = slippageInput ?? 50
+        const swapSlippageBps = slippageInput ?? 50
         const deadlineSeconds = Number.isFinite(parsed.data.deadlineSeconds) ? parsed.data.deadlineSeconds! : 180
         const forceMultiHop = parsed.data.forceMultiHop ?? false
         const enableSplit = parsed.data.enableSplit !== false
@@ -687,7 +696,7 @@ export const buildServer = async () => {
         // Strategy 2: Fresh quote (fallback when no quoteId)
         if (!quoteResult) {
             try {
-                quoteResult = await quoteService.getQuote(chain, effectiveTokenA, effectiveTokenB, parsed.data.amount, slippageBps, routePreference, forceMultiHop, enableSplit)
+                quoteResult = await quoteService.getQuote(chain, effectiveTokenA, effectiveTokenB, parsed.data.amount, swapSlippageBps, routePreference, forceMultiHop, enableSplit)
             } catch (error) {
                 reply.status(400)
                 return { error: 'invalid_request', message: (error as Error).message }
@@ -739,9 +748,9 @@ export const buildServer = async () => {
                 try {
                     await client.call({
                         account: recipient,
-                        to: transaction.call.to,
-                        data: transaction.call.data,
-                        value: transaction.call.value,
+                        to: simCall.to,
+                        data: simCall.data,
+                        value: simCall.value,
                         stateOverride,
                     })
                     simulationPassed = true
@@ -754,9 +763,9 @@ export const buildServer = async () => {
                 try {
                     estimatedGas = await client.estimateGas({
                         account: recipient,
-                        to: transaction.call.to,
-                        data: transaction.call.data,
-                        value: transaction.call.value,
+                        to: simCall.to,
+                        data: simCall.data,
+                        value: simCall.value,
                         stateOverride,
                     })
                     estimatedGas = (estimatedGas * 120n) / 100n
@@ -776,12 +785,14 @@ export const buildServer = async () => {
 
         const baseResponse = formatPriceQuote(chain, quote, routePreference)
         const amountOutMinFormatted = formatAmountFromUnits(amountOutMin, tokenOut.decimals)
+        const swapRecommended = computeRecommendedSlippage(quote)
 
         return {
             ...baseResponse,
             amountOutMin: amountOutMin.toString(),
             amountOutMinFormatted,
             slippageBps: boundedSlippage,
+            recommendedSlippageBps: swapRecommended,
             recipient,
             deadline: transaction.deadline,
             quoteTimestamp,
