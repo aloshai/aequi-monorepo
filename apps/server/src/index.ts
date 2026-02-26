@@ -40,6 +40,11 @@ export const buildServer = async (overrideDeps?: AppDeps) => {
     timeWindow: appConfig.rateLimit.window,
   })
 
+  app.addHook('onSend', (_request, reply, payload, done) => {
+    reply.header('X-Powered-By', 'Aequi')
+    done()
+  })
+
   await app.register(metricsRoutes)
   await app.register(healthRoutes, { deps: d })
   await app.register(exchangeRoutes, { deps: d })
@@ -74,7 +79,17 @@ export const startServer = async () => {
 
   try {
     await app.listen({ port, host })
-    app.log.info(`Server listening on ${host}:${port}`)
+    console.log(`
+  ┌─────────────────────────────────────┐
+  │                                     │
+  │          A E Q U I   D E X          │
+  │        Aggregator  &  Router        │
+  │                                     │
+  │   ${`http://${host}:${port}`.padEnd(35)} │
+  │   env: ${(process.env.NODE_ENV ?? 'development').padEnd(29)} │
+  │                                     │
+  └─────────────────────────────────────┘
+`)
     return app
   } catch (error) {
     app.log.error(error)

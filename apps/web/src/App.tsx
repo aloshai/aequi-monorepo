@@ -21,6 +21,7 @@ import { DataTabs } from './components/DataTabs'
 import { TokenModal } from './components/TokenModal'
 import { SettingsModal } from './components/SettingsModal'
 import { SwapConfirmModal } from './components/SwapConfirmModal'
+import { PoweredBy } from './components/PoweredBy'
 
 type SupportedChainId = typeof CHAIN_BY_KEY.ethereum.id | typeof CHAIN_BY_KEY.bsc.id
 
@@ -268,6 +269,8 @@ function App() {
           </>
         )}
       </main>
+
+      <PoweredBy />
 
       <TokenModal
         isOpen={tokenModalOpen}

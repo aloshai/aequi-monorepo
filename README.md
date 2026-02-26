@@ -75,5 +75,15 @@ From `packages/contracts`:
 - Test: `npx hardhat test`
 - Deploy: `npx hardhat ignition deploy ignition/modules/AequiExecutor.js --network <network>`
 
+## Attribution
+
+This project is licensed under **Apache 2.0** with a separate **Trademark Policy** that protects the Aequi brand. If you fork or build on top of Aequi:
+
+- **Frontend / UI** — You must display a visible "Powered by Aequi" notice that links to the official Aequi repository or website. The `<PoweredBy />` component in `apps/web/src/components/PoweredBy.tsx` satisfies this requirement out of the box — do not remove it.
+- **API / Backend** — Every HTTP response must include the `X-Powered-By: Aequi` header. The default server configuration already sets this.
+- **NOTICE file** — Apache 2.0 requires you to retain the [NOTICE](NOTICE) file in any distribution.
+
+See [TRADEMARK.md](TRADEMARK.md) for full brand usage rules.
+
 ## License
-MIT
+Apache 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE)
