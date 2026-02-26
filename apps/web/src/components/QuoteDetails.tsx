@@ -1,4 +1,5 @@
 import type { QuoteResponse, RouteToken } from '../types/api'
+import { useSwapStore } from '../store/use-swap-store'
 
 interface QuoteDetailsProps {
   quote: QuoteResponse
@@ -12,6 +13,7 @@ const NATIVE_SYMBOL: Record<string, string> = {
 }
 
 export function QuoteDetails({ quote, tokenA, tokenB }: QuoteDetailsProps) {
+  const quoteCountdown = useSwapStore((s) => s.quoteCountdown)
   const nativeCurrency = NATIVE_SYMBOL[quote.chain] ?? 'ETH'
 
   const rate = Number(quote.amountOut) / 10 ** tokenB.decimals / Number(quote.amountInFormatted)
@@ -74,6 +76,14 @@ export function QuoteDetails({ quote, tokenA, tokenB }: QuoteDetailsProps) {
           {quote.amountOutMinFormatted} {tokenB.symbol}
         </span>
       </div>
+      {quoteCountdown > 0 && (
+        <div className="quote-detail-row">
+          <span className="quote-detail-row__label">Auto-refresh</span>
+          <span className="quote-detail-row__value" style={{ color: quoteCountdown <= 5 ? 'var(--warning)' : undefined }}>
+            {quoteCountdown}s
+          </span>
+        </div>
+      )}
     </div>
   )
 }

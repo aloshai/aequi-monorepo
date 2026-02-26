@@ -8,7 +8,8 @@
     "dev": "bun run --watch index.ts",
     "start": "bun run src/index.ts",
     "check-types": "tsc --noEmit",
-    "lint": "echo 'Lint not configured yet'"
+    "lint": "echo 'Lint not configured yet'",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@types/bun": "latest",

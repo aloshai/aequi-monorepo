@@ -1,30 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import {
-  useAccount,
-  useChainId,
-  useConnect,
-  useDisconnect,
-  useSendTransaction,
-  useSwitchChain,
-  useReadContract,
-  useBalance,
-} from 'wagmi'
-import { waitForTransactionReceipt } from 'wagmi/actions'
-import type { AllowanceResponse, ChainKey, QuoteResponse, SwapResponse } from './types/api'
-import {
-  fetchAllowances,
-  fetchExchangeDirectory,
-  fetchSwapQuote,
-  requestApproveCalldata,
-  requestSwapTransaction,
-} from './services/aequi-api'
-import { resolveApiErrorMessage, resolveApiErrorPayload } from './lib/http'
+import { useCallback, useEffect, useMemo } from 'react'
+import { useAccount, useChainId, useConnect, useDisconnect, useSwitchChain } from 'wagmi'
+import type { ChainKey } from './types/api'
+import { fetchExchangeDirectory } from './services/aequi-api'
 import { tokenDirectory } from './data/token-directory'
-import { CHAIN_BY_KEY, wagmiConfig } from './lib/wagmi'
-import { tokenManager } from './services/token-manager'
+import { CHAIN_BY_KEY } from './lib/wagmi'
 import type { Token } from './services/token-manager'
-import { parseSwapError } from './utils/swap-errors'
-import { addSwapHistoryEntry, getSwapHistory, updateSwapHistoryStatus } from './services/swap-history'
+
+import { useSwapStore } from './store/use-swap-store'
+import { useSettingsStore } from './store/use-settings-store'
+import { useTokenStore } from './store/use-token-store'
+import { useTokenBalances, formatBigIntAmount } from './hooks/use-token-balances'
+import { useQuotePoller } from './hooks/use-quote-poller'
+import { useSwapExecution } from './hooks/use-swap-execution'
 
 import { Navbar } from './components/Navbar'
 import { TokenInput } from './components/TokenInput'
@@ -35,7 +22,6 @@ import { TokenModal } from './components/TokenModal'
 import { SettingsModal } from './components/SettingsModal'
 import { SwapConfirmModal } from './components/SwapConfirmModal'
 
-type RoutePreference = 'auto' | 'v2' | 'v3'
 type SupportedChainId = typeof CHAIN_BY_KEY.ethereum.id | typeof CHAIN_BY_KEY.bsc.id
 
 const CHAIN_ID_BY_KEY: Record<ChainKey, SupportedChainId> = {
@@ -48,41 +34,46 @@ const BLOCK_EXPLORER_BY_CHAIN: Record<ChainKey, string> = {
   bsc: 'https://bscscan.com',
 }
 
-const chainOptions: Array<{ key: ChainKey; label: string }> = [
+const CHAIN_OPTIONS: Array<{ key: ChainKey; label: string }> = [
   { key: 'ethereum', label: 'Ethereum' },
   { key: 'bsc', label: 'BNB Smart Chain' },
 ]
 
-const formatBigIntAmount = (value: bigint, decimals: number, precision = 6): string => {
-  if (value === 0n) return '0'
-  const divisor = 10n ** BigInt(decimals)
-  const whole = value / divisor
-  const remainder = value % divisor
-  if (remainder === 0n) return whole.toString()
-  const fracStr = remainder.toString().padStart(decimals, '0').slice(0, precision)
-  const trimmed = fracStr.replace(/0+$/, '')
-  return trimmed ? `${whole}.${trimmed}` : whole.toString()
-}
-
-interface QuoteFormState {
-  tokenA: Token | null
-  tokenB: Token | null
-  amount: string
-  slippageBps: string
-  version: RoutePreference
-  deadlineSeconds: string
-}
-
 function App() {
-  const [selectedChain, setSelectedChain] = useState<ChainKey>('bsc')
+  const {
+    selectedChain, tokenA, tokenB, amount, forceMultiHop,
+    quoteResult, quoteError, quoteLoading,
+    preparedSwap, prepareLoading, prepareError,
+    approvalLoading, approvalError, approvalHash,
+    swapExecutionLoading, swapExecutionError, swapHash,
+    swapConfirmModalOpen, walletError,
+    connectBusy, disconnectBusy, switchBusy,
+    setSelectedChain, setTokenA, setTokenB, setAmount,
+    setForceMultiHop, swapTokens, setSwapConfirmModalOpen,
+    setWalletError, setConnectBusy, setDisconnectBusy, setSwitchBusy,
+    resetQuoteState,
+  } = useSwapStore()
 
-  const [tokenModalOpen, setTokenModalOpen] = useState(false)
-  const [settingsModalOpen, setSettingsModalOpen] = useState(false)
-  const [swapConfirmModalOpen, setSwapConfirmModalOpen] = useState(false)
-  const [selectingToken, setSelectingToken] = useState<'A' | 'B' | null>(null)
-  const [importedTokens, setImportedTokens] = useState<Token[]>([])
+  const { slippageBps, setSlippageBps, deadlineSeconds, setDeadlineSeconds, version, setVersion, approvalMode, setApprovalMode, settingsModalOpen, openSettings, closeSettings } = useSettingsStore()
+  const { importedTokens, tokenModalOpen, selectingToken, importToken, openModal, closeModal } = useTokenStore()
 
-  useEffect(() => { setImportedTokens(tokenManager.getImportedTokens()) }, [])
+  const { address, isConnected } = useAccount()
+  const chainId = useChainId()
+  const { connectors, connectAsync } = useConnect()
+  const { disconnectAsync } = useDisconnect()
+  const { switchChainAsync } = useSwitchChain()
+
+  const selectedChainId: SupportedChainId = CHAIN_ID_BY_KEY[selectedChain]
+  const chainMismatch = isConnected && !!chainId && chainId !== selectedChainId
+  const defaultConnector = connectors[0]
+  const selectedChainLabel = useMemo(
+    () => CHAIN_OPTIONS.find(o => o.key === selectedChain)?.label ?? selectedChain,
+    [selectedChain],
+  )
+
+  const { balanceA, fmtA, fmtB, isNativeA } = useTokenBalances(address)
+  useQuotePoller()
+  const { prepareSwap, confirmSwap } = useSwapExecution(address, isConnected, chainMismatch)
 
   const defaultTokens = useMemo(() => {
     const presets = tokenDirectory[selectedChain] ?? []
@@ -92,67 +83,6 @@ function App() {
     return [...mapped, ...importedTokens.filter(t => t.chainId === CHAIN_ID_BY_KEY[selectedChain])]
   }, [selectedChain, importedTokens])
 
-  const { address, isConnected } = useAccount()
-  const chainId = useChainId()
-  const { connectors, connectAsync } = useConnect()
-  const { disconnectAsync } = useDisconnect()
-  const { switchChainAsync } = useSwitchChain()
-  const { sendTransactionAsync } = useSendTransaction()
-
-  const [walletError, setWalletError] = useState<string | null>(null)
-  const [connectBusy, setConnectBusy] = useState(false)
-  const [disconnectBusy, setDisconnectBusy] = useState(false)
-  const [switchBusy, setSwitchBusy] = useState(false)
-
-  const selectedChainId: SupportedChainId = CHAIN_ID_BY_KEY[selectedChain]
-  const chainMismatch = isConnected && !!chainId && chainId !== selectedChainId
-  const defaultConnector = connectors[0]
-
-  const handleConnect = useCallback(async () => {
-    setWalletError(null)
-    if (!defaultConnector) { setWalletError('No injected wallet detected'); return }
-    try { setConnectBusy(true); await connectAsync({ connector: defaultConnector }) }
-    catch (e) { setWalletError(e instanceof Error ? e.message : 'Failed to connect') }
-    finally { setConnectBusy(false) }
-  }, [connectAsync, defaultConnector])
-
-  const handleDisconnect = useCallback(async () => {
-    setWalletError(null)
-    try { setDisconnectBusy(true); await disconnectAsync() }
-    catch (e) { setWalletError(e instanceof Error ? e.message : 'Failed to disconnect') }
-    finally { setDisconnectBusy(false) }
-  }, [disconnectAsync])
-
-  const handleSwitchNetwork = useCallback(async () => {
-    if (!switchChainAsync) { setWalletError('Network switching not supported'); return }
-    setWalletError(null)
-    try { setSwitchBusy(true); await switchChainAsync({ chainId: selectedChainId }) }
-    catch (e) { setWalletError(e instanceof Error ? e.message : 'Failed to switch') }
-    finally { setSwitchBusy(false) }
-  }, [selectedChainId, switchChainAsync])
-
-  const [quoteForm, setQuoteForm] = useState<QuoteFormState>({
-    tokenA: null, tokenB: null, amount: '', slippageBps: 'auto', version: 'auto', deadlineSeconds: '600',
-  })
-  const [forceMultiHop, setForceMultiHop] = useState(false)
-
-  const [quoteResult, setQuoteResult] = useState<QuoteResponse | null>(null)
-  const [quoteError, setQuoteError] = useState<string | null>(null)
-  const [quoteLoading, setQuoteLoading] = useState(false)
-
-  const [, setAllowanceState] = useState<AllowanceResponse | null>(null)
-  const [preparedSwap, setPreparedSwap] = useState<SwapResponse | null>(null)
-  const [prepareLoading, setPrepareLoading] = useState(false)
-  const [prepareError, setPrepareError] = useState<string | null>(null)
-  const [approvalLoading, setApprovalLoading] = useState<'exact' | 'infinite' | null>(null)
-  const [approvalError, setApprovalError] = useState<string | null>(null)
-  const [approvalHash, setApprovalHash] = useState<string | null>(null)
-  const [swapExecutionLoading, setSwapExecutionLoading] = useState(false)
-  const [swapExecutionError, setSwapExecutionError] = useState<string | null>(null)
-  const [swapHash, setSwapHash] = useState<string | null>(null)
-  const [, setSwapHistory] = useState(() => getSwapHistory())
-  const [approvalMode, setApprovalMode] = useState<'infinite' | 'exact'>('exact')
-
   useEffect(() => {
     const presets = tokenDirectory[selectedChain] || []
     const cid = CHAIN_ID_BY_KEY[selectedChain]
@@ -160,255 +90,67 @@ function App() {
     const symB = selectedChain === 'bsc' ? 'USDT' : 'USDC'
     const pA = presets.find(p => p.symbol === symA)
     const pB = presets.find(p => p.symbol === symB)
-    const tA = pA ? { address: pA.address, symbol: pA.symbol, name: pA.label, decimals: pA.decimals, chainId: cid } : null
-    const tB = pB ? { address: pB.address, symbol: pB.symbol, name: pB.label, decimals: pB.decimals, chainId: cid } : null
-    setQuoteForm(prev => ({ ...prev, tokenA: tA, tokenB: tB, amount: '1' }))
-    setQuoteResult(null)
-    setPreparedSwap(null)
-    setAllowanceState(null)
-  }, [selectedChain])
-
-  const selectedChainLabel = useMemo(
-    () => chainOptions.find(o => o.key === selectedChain)?.label ?? selectedChain,
-    [selectedChain],
-  )
-
-  // Balances
-  const { data: nativeBalance } = useBalance({ address, chainId: selectedChainId })
-  const isNativeA = quoteForm.tokenA?.address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
-  const isNativeB = quoteForm.tokenB?.address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
-
-  const erc20Abi = [{
-    name: 'balanceOf' as const, type: 'function' as const, stateMutability: 'view' as const,
-    inputs: [{ name: 'account', type: 'address' }], outputs: [{ name: 'balance', type: 'uint256' }],
-  }]
-
-  const { data: tokenABalance } = useReadContract({
-    address: quoteForm.tokenA && !isNativeA ? quoteForm.tokenA.address as `0x${string}` : undefined,
-    abi: erc20Abi, functionName: 'balanceOf', args: address ? [address] : undefined,
-    chainId: selectedChainId, query: { enabled: !!address && !!quoteForm.tokenA && !isNativeA },
-  })
-
-  const { data: tokenBBalance } = useReadContract({
-    address: quoteForm.tokenB && !isNativeB ? quoteForm.tokenB.address as `0x${string}` : undefined,
-    abi: erc20Abi, functionName: 'balanceOf', args: address ? [address] : undefined,
-    chainId: selectedChainId, query: { enabled: !!address && !!quoteForm.tokenB && !isNativeB },
-  })
-
-  const balanceA = useMemo(() => {
-    if (!quoteForm.tokenA) return 0n
-    if (isNativeA) return nativeBalance?.value ?? 0n
-    return (tokenABalance as unknown as bigint) ?? 0n
-  }, [quoteForm.tokenA, isNativeA, nativeBalance, tokenABalance])
-
-  const balanceB = useMemo(() => {
-    if (!quoteForm.tokenB) return 0n
-    if (isNativeB) return nativeBalance?.value ?? 0n
-    return (tokenBBalance as unknown as bigint) ?? 0n
-  }, [quoteForm.tokenB, isNativeB, nativeBalance, tokenBBalance])
-
-  const fmtA = useMemo(() => quoteForm.tokenA ? formatBigIntAmount(balanceA, quoteForm.tokenA.decimals) : '0', [balanceA, quoteForm.tokenA])
-  const fmtB = useMemo(() => quoteForm.tokenB ? formatBigIntAmount(balanceB, quoteForm.tokenB.decimals) : '0', [balanceB, quoteForm.tokenB])
-
-  const handleSetMax = useCallback(() => {
-    if (!quoteForm.tokenA) return
-    if (isNativeA) {
-      const buf = 10n ** BigInt(quoteForm.tokenA.decimals - 2)
-      const safe = balanceA > buf ? balanceA - buf : 0n
-      setQuoteForm(prev => ({ ...prev, amount: formatBigIntAmount(safe, quoteForm.tokenA!.decimals, 18) }))
-    } else {
-      setQuoteForm(prev => ({ ...prev, amount: formatBigIntAmount(balanceA, quoteForm.tokenA!.decimals, 18) }))
-    }
-  }, [balanceA, quoteForm.tokenA, isNativeA])
-
-  const handleSetHalf = useCallback(() => {
-    if (!quoteForm.tokenA) return
-    setQuoteForm(prev => ({ ...prev, amount: formatBigIntAmount(balanceA / 2n, quoteForm.tokenA!.decimals, 18) }))
-  }, [balanceA, quoteForm.tokenA])
-
-  const handleSetQuarter = useCallback(() => {
-    if (!quoteForm.tokenA) return
-    setQuoteForm(prev => ({ ...prev, amount: formatBigIntAmount(balanceA / 4n, quoteForm.tokenA!.decimals, 18) }))
-  }, [balanceA, quoteForm.tokenA])
+    setTokenA(pA ? { address: pA.address, symbol: pA.symbol, name: pA.label, decimals: pA.decimals, chainId: cid } : null)
+    setTokenB(pB ? { address: pB.address, symbol: pB.symbol, name: pB.label, decimals: pB.decimals, chainId: cid } : null)
+    setAmount('1')
+    resetQuoteState()
+  }, [selectedChain, setTokenA, setTokenB, setAmount, resetQuoteState])
 
   useEffect(() => { fetchExchangeDirectory({ chain: selectedChain }).catch(() => {}) }, [selectedChain])
 
-  const onQuoteRequest = useCallback(async () => {
-    const tA = quoteForm.tokenA?.address
-    const tB = quoteForm.tokenB?.address
-    const amt = quoteForm.amount.trim()
-    if (!tA || !tB || !amt) return
-    if (tA.toLowerCase() === tB.toLowerCase()) { setQuoteError('Tokens must be different'); return }
-    setQuoteLoading(true); setQuoteError(null); setPreparedSwap(null); setAllowanceState(null)
-    try {
-      const data = await fetchSwapQuote({
-        chain: selectedChain, tokenA: tA, tokenB: tB, amount: amt,
-        slippageBps: quoteForm.slippageBps === 'auto' ? 'auto' : (quoteForm.slippageBps.trim() || undefined),
-        version: quoteForm.version,
-        forceMultiHop: forceMultiHop ? 'true' as const : undefined,
-      })
-      setQuoteResult(data)
-    } catch (e) {
-      setQuoteError(resolveApiErrorMessage(e))
-    } finally { setQuoteLoading(false) }
-  }, [quoteForm, selectedChain, forceMultiHop])
+  const handleConnect = useCallback(async () => {
+    setWalletError(null)
+    if (!defaultConnector) { setWalletError('No injected wallet detected'); return }
+    try { setConnectBusy(true); await connectAsync({ connector: defaultConnector }) }
+    catch (e) { setWalletError(e instanceof Error ? e.message : 'Failed to connect') }
+    finally { setConnectBusy(false) }
+  }, [connectAsync, defaultConnector, setWalletError, setConnectBusy])
 
-  useEffect(() => {
-    const t = setTimeout(() => { if (quoteForm.tokenA && quoteForm.tokenB && quoteForm.amount) onQuoteRequest() }, 600)
-    return () => clearTimeout(t)
-  }, [quoteForm.tokenA, quoteForm.tokenB, quoteForm.amount, onQuoteRequest])
+  const handleDisconnect = useCallback(async () => {
+    setWalletError(null)
+    try { setDisconnectBusy(true); await disconnectAsync() }
+    catch (e) { setWalletError(e instanceof Error ? e.message : 'Failed to disconnect') }
+    finally { setDisconnectBusy(false) }
+  }, [disconnectAsync, setWalletError, setDisconnectBusy])
 
-  const onSwapTokens = useCallback(() => {
-    setQuoteForm(prev => ({ ...prev, tokenA: prev.tokenB, tokenB: prev.tokenA }))
-  }, [])
+  const handleSwitchNetwork = useCallback(async () => {
+    if (!switchChainAsync) { setWalletError('Network switching not supported'); return }
+    setWalletError(null)
+    try { setSwitchBusy(true); await switchChainAsync({ chainId: selectedChainId }) }
+    catch (e) { setWalletError(e instanceof Error ? e.message : 'Failed to switch') }
+    finally { setSwitchBusy(false) }
+  }, [selectedChainId, switchChainAsync, setWalletError, setSwitchBusy])
 
-  const handleTokenSelect = (token: Token) => {
-    if (selectingToken === 'A') setQuoteForm(prev => ({ ...prev, tokenA: token }))
-    else if (selectingToken === 'B') setQuoteForm(prev => ({ ...prev, tokenB: token }))
-    if (token.isImported) { tokenManager.addImportedToken(token); setImportedTokens(tokenManager.getImportedTokens()) }
-    setTokenModalOpen(false); setSelectingToken(null)
-  }
+  const handleTokenSelect = useCallback((token: Token) => {
+    if (selectingToken === 'A') setTokenA(token)
+    else if (selectingToken === 'B') setTokenB(token)
+    if (token.isImported) importToken(token)
+    closeModal()
+  }, [selectingToken, setTokenA, setTokenB, importToken, closeModal])
 
-  const refreshAllowance = useCallback(
-    async (token: string, spender: string, options?: { silent?: boolean }): Promise<AllowanceResponse | null> => {
-      if (!address) return null
-      const silent = Boolean(options?.silent)
-      try {
-        const data = await fetchAllowances({ chain: selectedChain, owner: address, spender, tokens: [token] })
-        setAllowanceState(data)
-        return data
-      } catch (e) {
-        if (!silent) resolveApiErrorPayload(e)
-        return null
-      }
-    },
-    [address, selectedChain],
-  )
-
-  const ensureAllowanceSynced = useCallback(async (): Promise<boolean> => {
-    if (!preparedSwap?.tokens.length) return false
-    const tokenAddr = preparedSwap.tokens[0]!.address
-    const spender = preparedSwap.transaction.spender
-    let required = 0n
-    try { required = BigInt(preparedSwap.transaction.amountIn) } catch { required = 0n }
-    for (let i = 0; i < 4; i++) {
-      const resp = await refreshAllowance(tokenAddr, spender, { silent: i > 0 })
-      if (resp) {
-        const entry = resp.allowances.find(a => a.token.toLowerCase() === tokenAddr.toLowerCase())
-        if (entry) { try { if (BigInt(entry.allowance) >= required) return true } catch {} }
-      }
-      if (i < 3) await new Promise(r => setTimeout(r, 1500))
+  const handleSetMax = useCallback(() => {
+    if (!tokenA) return
+    if (isNativeA) {
+      const buf = 10n ** BigInt(tokenA.decimals - 2)
+      const safe = balanceA > buf ? balanceA - buf : 0n
+      setAmount(formatBigIntAmount(safe, tokenA.decimals, 18))
+    } else {
+      setAmount(formatBigIntAmount(balanceA, tokenA.decimals, 18))
     }
-    return false
-  }, [preparedSwap, refreshAllowance])
+  }, [balanceA, tokenA, isNativeA, setAmount])
 
-  const onExecuteSwapFlow = useCallback(async () => {
-    if (!quoteResult) { setSwapExecutionError('Request a quote first'); return }
-    if (quoteResult.expiresAt && Date.now() / 1000 > quoteResult.expiresAt) {
-      setSwapExecutionError('Quote has expired — please refresh'); return
-    }
-    if (!address || !isConnected) { setSwapExecutionError('Connect wallet'); return }
-    if (chainMismatch) {
-      setSwapExecutionError(`Switch to ${chainOptions.find(o => o.key === selectedChain)?.label ?? selectedChain}`); return
-    }
-    const tA = quoteForm.tokenA?.address; const tB = quoteForm.tokenB?.address
-    const amt = quoteForm.amount.trim()
-    if (!tA || !tB) return
+  const handleSetHalf = useCallback(() => {
+    if (!tokenA) return
+    setAmount(formatBigIntAmount(balanceA / 2n, tokenA.decimals, 18))
+  }, [balanceA, tokenA, setAmount])
 
-    setPrepareLoading(true); setPrepareError(null)
-    try {
-      const swapData = await requestSwapTransaction({
-        chain: selectedChain, tokenA: tA, tokenB: tB, amount: amt,
-        slippageBps: quoteForm.slippageBps === 'auto' ? undefined : (quoteForm.slippageBps.trim() ? Number(quoteForm.slippageBps) : undefined),
-        version: quoteForm.version, recipient: address,
-        deadlineSeconds: quoteForm.deadlineSeconds.trim() ? Number(quoteForm.deadlineSeconds) : undefined,
-        forceMultiHop,
-        quoteId: quoteResult.quoteId,
-      })
-      setPreparedSwap(swapData)
-      setPrepareLoading(false)
-      setSwapConfirmModalOpen(true)
-    } catch (e) {
-      setPrepareError(resolveApiErrorMessage(e)); setPrepareLoading(false)
-    }
-  }, [address, chainMismatch, quoteResult, quoteForm, selectedChain, isConnected, forceMultiHop])
-
-  const onConfirmSwap = useCallback(async () => {
-    if (!preparedSwap) return
-    setApprovalError(null); setSwapExecutionError(null)
-    try {
-      const inputToken = preparedSwap.tokens[0]?.address
-      if (!inputToken) throw new Error('Input token metadata unavailable')
-      const allowanceData = await refreshAllowance(inputToken, preparedSwap.transaction.spender, { silent: true })
-      let needsApproval = true
-      if (allowanceData) {
-        const entry = allowanceData.allowances.find(a => a.token.toLowerCase() === inputToken.toLowerCase())
-        if (entry) { try { if (BigInt(entry.allowance) >= BigInt(preparedSwap.transaction.amountIn)) needsApproval = false } catch {} }
-      }
-      if (needsApproval) {
-        const useInfinite = approvalMode === 'infinite'
-        setApprovalLoading(useInfinite ? 'infinite' : 'exact')
-        const approvalData = await requestApproveCalldata({
-          chain: selectedChain, token: inputToken, spender: preparedSwap.transaction.spender,
-          ...(useInfinite ? { infinite: true } : { amount: preparedSwap.transaction.amountIn }),
-        })
-        const txTarget = approvalData.transaction?.to; const txData = approvalData.transaction?.data
-        if (!txTarget || !txData) throw new Error('Approval payload missing')
-        const aTx = await sendTransactionAsync({
-          chainId: selectedChainId, to: txTarget as `0x${string}`, data: txData as `0x${string}`,
-          value: BigInt(approvalData.transaction?.value ?? '0'),
-        })
-        setApprovalHash(aTx)
-        await waitForTransactionReceipt(wagmiConfig, { chainId: selectedChainId, hash: aTx })
-        setApprovalHash(null); setApprovalLoading(null)
-        await ensureAllowanceSynced()
-      }
-
-      setSwapExecutionLoading(true)
-      if (!preparedSwap.transaction.call) throw new Error('Missing transaction payload')
-      const gas = preparedSwap.transaction.estimatedGas ? BigInt(preparedSwap.transaction.estimatedGas) : undefined
-      const sTx = await sendTransactionAsync({
-        chainId: selectedChainId,
-        to: preparedSwap.transaction.call.to as `0x${string}`,
-        data: preparedSwap.transaction.call.data as `0x${string}`,
-        value: BigInt(preparedSwap.transaction.call.value ?? '0'),
-        gas,
-      })
-      setSwapHash(sTx)
-
-      const tInSym = preparedSwap.tokens[0]?.symbol ?? '?'
-      const tOutSym = preparedSwap.tokens[preparedSwap.tokens.length - 1]?.symbol ?? '?'
-      addSwapHistoryEntry({
-        hash: sTx, chain: selectedChain, tokenInSymbol: tInSym, tokenOutSymbol: tOutSym,
-        amountIn: preparedSwap.amountInFormatted, amountOut: preparedSwap.amountOutFormatted,
-        timestamp: Date.now(), status: 'pending',
-      })
-      setSwapHistory(getSwapHistory())
-
-      await waitForTransactionReceipt(wagmiConfig, { chainId: selectedChainId, hash: sTx })
-      updateSwapHistoryStatus(sTx, 'confirmed')
-      setSwapHistory(getSwapHistory())
-      setSwapHash(null)
-      setQuoteResult(null)
-      setQuoteForm(prev => ({ ...prev, amount: '' }))
-      setSwapConfirmModalOpen(false)
-      setPreparedSwap(null)
-    } catch (e) {
-      if (approvalLoading) {
-        setApprovalError(resolveApiErrorMessage(e))
-      } else {
-        const msg = parseSwapError(e)
-        setSwapExecutionError(msg)
-        if (swapHash) { updateSwapHistoryStatus(swapHash, 'failed'); setSwapHistory(getSwapHistory()) }
-      }
-      setApprovalHash(null); setSwapHash(null)
-    } finally {
-      setApprovalLoading(null); setSwapExecutionLoading(false)
-    }
-  }, [preparedSwap, refreshAllowance, selectedChain, selectedChainId, sendTransactionAsync, ensureAllowanceSynced, approvalLoading, swapHash, approvalMode])
+  const handleSetQuarter = useCallback(() => {
+    if (!tokenA) return
+    setAmount(formatBigIntAmount(balanceA / 4n, tokenA.decimals, 18))
+  }, [balanceA, tokenA, setAmount])
 
   const outputDisplay = quoteResult
-    ? formatBigIntAmount(BigInt(quoteResult.amountOut), quoteForm.tokenB?.decimals || 18)
+    ? formatBigIntAmount(BigInt(quoteResult.amountOut), tokenB?.decimals || 18)
     : ''
 
   const priceImpact = quoteResult ? quoteResult.priceImpactBps / 100 : 0
@@ -424,7 +166,7 @@ function App() {
         onConnect={handleConnect}
         onDisconnect={handleDisconnect}
         onSwitchNetwork={handleSwitchNetwork}
-        onOpenSettings={() => setSettingsModalOpen(true)}
+        onOpenSettings={openSettings}
         connectBusy={connectBusy}
         disconnectBusy={disconnectBusy}
         switchBusy={switchBusy}
@@ -434,20 +176,20 @@ function App() {
         <div className="swap-card">
           <TokenInput
             label="Sell"
-            token={quoteForm.tokenA}
-            amount={quoteForm.amount}
-            onAmountChange={(v) => setQuoteForm(prev => ({ ...prev, amount: v }))}
-            onTokenSelect={() => { setSelectingToken('A'); setTokenModalOpen(true) }}
-            balance={isConnected && quoteForm.tokenA ? `${fmtA} ${quoteForm.tokenA.symbol}` : undefined}
+            token={tokenA}
+            amount={amount}
+            onAmountChange={setAmount}
+            onTokenSelect={() => openModal('A')}
+            balance={isConnected && tokenA ? `${fmtA} ${tokenA.symbol}` : undefined}
             showShortcuts={isConnected}
             onQuarter={handleSetQuarter}
             onHalf={handleSetHalf}
             onMax={handleSetMax}
-            shortcutsDisabled={!isConnected || !quoteForm.tokenA || balanceA === 0n}
+            shortcutsDisabled={!isConnected || !tokenA || balanceA === 0n}
           />
 
           <div className="swap-toggle">
-            <button className="swap-toggle-btn" onClick={onSwapTokens}>
+            <button className="swap-toggle-btn" onClick={swapTokens}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" />
               </svg>
@@ -456,10 +198,10 @@ function App() {
 
           <TokenInput
             label="Buy"
-            token={quoteForm.tokenB}
+            token={tokenB}
             amount={outputDisplay}
-            onTokenSelect={() => { setSelectingToken('B'); setTokenModalOpen(true) }}
-            balance={isConnected && quoteForm.tokenB ? `${fmtB} ${quoteForm.tokenB.symbol}` : undefined}
+            onTokenSelect={() => openModal('B')}
+            balance={isConnected && tokenB ? `${fmtB} ${tokenB.symbol}` : undefined}
             readOnly
           />
 
@@ -493,8 +235,8 @@ function App() {
 
           <button
             className="swap-action-btn"
-            onClick={onExecuteSwapFlow}
-            disabled={!quoteForm.tokenA || !quoteForm.tokenB || !quoteForm.amount || quoteLoading || prepareLoading || !!approvalLoading || swapExecutionLoading}
+            onClick={prepareSwap}
+            disabled={!tokenA || !tokenB || !amount || quoteLoading || prepareLoading || !!approvalLoading || swapExecutionLoading}
           >
             {quoteLoading ? 'Fetching Quote…' :
               prepareLoading ? 'Preparing…' :
@@ -511,9 +253,9 @@ function App() {
           </div>
         )}
 
-        {quoteResult && quoteForm.tokenA && quoteForm.tokenB && (
+        {quoteResult && tokenA && tokenB && (
           <>
-            <QuoteDetails quote={quoteResult} tokenA={quoteForm.tokenA} tokenB={quoteForm.tokenB} />
+            <QuoteDetails quote={quoteResult} tokenA={tokenA} tokenB={tokenB} />
 
             {priceImpact > 15 && (
               <div className="high-impact-banner">
@@ -521,28 +263,28 @@ function App() {
               </div>
             )}
 
-            <RouteVisual quote={quoteResult} tokenB={quoteForm.tokenB} />
-            <DataTabs quote={quoteResult} tokenB={quoteForm.tokenB} />
+            <RouteVisual quote={quoteResult} tokenB={tokenB} />
+            <DataTabs quote={quoteResult} tokenB={tokenB} />
           </>
         )}
       </main>
 
       <TokenModal
         isOpen={tokenModalOpen}
-        onClose={() => setTokenModalOpen(false)}
+        onClose={closeModal}
         onSelect={handleTokenSelect}
         defaultTokens={defaultTokens}
       />
 
       <SettingsModal
         isOpen={settingsModalOpen}
-        onClose={() => setSettingsModalOpen(false)}
-        slippageBps={quoteForm.slippageBps}
-        setSlippageBps={(v) => setQuoteForm(prev => ({ ...prev, slippageBps: v }))}
-        deadlineSeconds={quoteForm.deadlineSeconds}
-        setDeadlineSeconds={(v) => setQuoteForm(prev => ({ ...prev, deadlineSeconds: v }))}
-        version={quoteForm.version}
-        setVersion={(v) => setQuoteForm(prev => ({ ...prev, version: v }))}
+        onClose={closeSettings}
+        slippageBps={slippageBps}
+        setSlippageBps={setSlippageBps}
+        deadlineSeconds={deadlineSeconds}
+        setDeadlineSeconds={setDeadlineSeconds}
+        version={version}
+        setVersion={setVersion}
         recommendedSlippageBps={quoteResult?.recommendedSlippageBps}
         approvalMode={approvalMode}
         setApprovalMode={setApprovalMode}
@@ -551,7 +293,7 @@ function App() {
       <SwapConfirmModal
         isOpen={swapConfirmModalOpen}
         onClose={() => setSwapConfirmModalOpen(false)}
-        onConfirm={onConfirmSwap}
+        onConfirm={confirmSwap}
         swapData={preparedSwap}
         loading={!!approvalLoading || swapExecutionLoading}
         error={approvalError || swapExecutionError}

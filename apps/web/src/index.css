@@ -1207,3 +1207,15 @@ body {
   .nav-btn { padding: 6px 10px; font-size: 0.75rem; }
   .modal-content { width: calc(100vw - 16px); max-height: 90vh; }
 }
+
+/* ── Skeleton pulse animation ── */
+@keyframes skeleton-pulse {
+  0% { opacity: 0.15; }
+  50% { opacity: 0.3; }
+  100% { opacity: 0.15; }
+}
+
+.skeleton-pulse {
+  background: var(--text-muted);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}

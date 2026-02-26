@@ -1,5 +1,11 @@
 import { useState } from 'react'
-import type { QuoteResponse, RouteToken } from '../types/api'
+import type { QuoteResponse, RouteToken, ChainKey } from '../types/api'
+import { useSwapStore } from '../store/use-swap-store'
+
+const BLOCK_EXPLORER: Record<ChainKey, string> = {
+  ethereum: 'https://etherscan.io',
+  bsc: 'https://bscscan.com',
+}
 
 interface DataTabsProps {
   quote: QuoteResponse
@@ -132,7 +138,8 @@ function PoolsTab({ quote }: { quote: QuoteResponse }) {
 }
 
 export function DataTabs({ quote, tokenB }: DataTabsProps) {
-  const [activeTab, setActiveTab] = useState<'offers' | 'pools'>('offers')
+  const [activeTab, setActiveTab] = useState<'offers' | 'pools' | 'history'>('offers')
+  const swapHistory = useSwapStore((s) => s.swapHistory)
 
   const hasOffers = quote.offers && quote.offers.length > 0
 
@@ -151,14 +158,73 @@ export function DataTabs({ quote, tokenB }: DataTabsProps) {
         >
           Pools ({quote.sources.length})
         </button>
+        <button
+          className={`data-tabs__tab ${activeTab === 'history' ? 'data-tabs__tab--active' : ''}`}
+          onClick={() => setActiveTab('history')}
+        >
+          History{swapHistory.length > 0 ? ` (${swapHistory.length})` : ''}
+        </button>
       </div>
       <div className="data-tabs__content">
         {activeTab === 'offers' ? (
           <OffersTab quote={quote} tokenB={tokenB} />
-        ) : (
+        ) : activeTab === 'pools' ? (
           <PoolsTab quote={quote} />
+        ) : (
+          <HistoryTab />
         )}
       </div>
     </div>
+  )
+}
+
+function HistoryTab() {
+  const swapHistory = useSwapStore((s) => s.swapHistory)
+
+  if (swapHistory.length === 0) {
+    return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', padding: '8px 0' }}>No swap history</div>
+  }
+
+  return (
+    <table className="offers-table">
+      <thead>
+        <tr>
+          <th>Pair</th>
+          <th>In</th>
+          <th>Out</th>
+          <th>Status</th>
+          <th>Tx</th>
+        </tr>
+      </thead>
+      <tbody>
+        {swapHistory.map((entry) => {
+          const explorer = BLOCK_EXPLORER[entry.chain] ?? BLOCK_EXPLORER.ethereum
+          const statusColor = entry.status === 'confirmed'
+            ? 'var(--success, #34d399)'
+            : entry.status === 'failed'
+              ? 'var(--danger)'
+              : 'var(--warning)'
+
+          return (
+            <tr key={entry.hash}>
+              <td>{entry.tokenInSymbol} → {entry.tokenOutSymbol}</td>
+              <td>{entry.amountIn}</td>
+              <td>{entry.amountOut}</td>
+              <td style={{ color: statusColor, textTransform: 'capitalize' }}>{entry.status}</td>
+              <td>
+                <a
+                  href={`${explorer}/tx/${entry.hash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: 'var(--accent)', fontSize: '0.75rem' }}
+                >
+                  {entry.hash.slice(0, 6)}…{entry.hash.slice(-4)}
+                </a>
+              </td>
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
   )
 }

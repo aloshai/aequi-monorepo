@@ -9,6 +9,7 @@ export * from './marginal'
 export * from './units'
 export * from './math'
 export * from './contracts'
+export * from './honeypot-detector'
 
 // Adapter infrastructure exports (for custom adapter development)
 export { BaseDexAdapter } from './dex-adapters/base-adapter'
