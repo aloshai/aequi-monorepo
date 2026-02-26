@@ -1,4 +1,4 @@
-const AEQUI_URL = 'https://github.com/AequiDAO'
+const AEQUI_URL = 'https://github.com/aloshai/aequi-monorepo'
 
 export function PoweredBy() {
   return (
