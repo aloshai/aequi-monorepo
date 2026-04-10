@@ -1,70 +1,68 @@
-# Aequi Monorepo AI Instructions
+# Project Guidelines
+
+## Code Style
+
+- Keep all token, gas, reserve, and quote amounts as `bigint`. Never use `number` for on-chain amounts.
+- Price math uses Q18 fixed point (`10n ** 18n`). Reuse helpers in `packages/pricing/src/math.ts`.
+- Normalize addresses with `viem` `getAddress()` and compare in lowercase when needed.
+- Reuse shared types from `@aequi/core` (`apps/server/src/types.ts` re-exports these); do not redefine local duplicates.
+- Use `AequiError` and stable `ErrorCode` values from `packages/core/src/errors.ts` for structured API failures.
 
 ## Architecture
 
-Turbo monorepo (Bun package manager) — a DEX aggregator for Ethereum and BSC where all swaps funnel through the on-chain `AequiExecutor` contract for atomic execution.
+Turbo monorepo with Bun workspaces:
 
-| Layer | Path | Role |
-|---|---|---|
-| Server | `apps/server` | Fastify API — discovers pools, prices routes, returns quotes, builds calldata |
-| Web | `apps/web` | React 19 / Vite frontend — Wagmi wallet, swap UI, route visualization |
-| Core | `packages/core` | Shared types (`ChainKey`, `PriceQuote`, `QuoteResult`), ABIs, `SwapBuilder`, `AequiError` hierarchy |
-| Pricing | `packages/pricing` | `TokenService`, `PoolDiscovery`, `PriceService`, quote math, split optimizer, DEX adapter registry |
-| DEX Adapters | `packages/dex-adapters` | Uniswap/PancakeSwap V2+V3 adapter implementations; `registerDefaultAdapters()` must run before pricing |
-| Contracts | `packages/contracts` | Hardhat — `AequiExecutor.sol` (multicall executor) + `AequiLens.sol` (batch pool data) |
+- `apps/server`: Fastify API. Route modules in `src/routes/*.ts` call controller handlers in `src/controllers/*.ts`; dependencies are composed in `src/deps.ts`.
+- `apps/web`: React 19 + Vite client using Wagmi and Axios.
+- `packages/core`: shared types, errors, ABIs, and `SwapBuilder`.
+- `packages/pricing`: token metadata, pool discovery, routing, quote math, split optimization.
+- `packages/dex-adapters`: Uniswap/Pancake adapters registered through pricing registry.
+- `packages/contracts`: Hardhat contracts (`AequiExecutor`, `AequiLens`).
 
-## Data flow (server)
+Server flow (high level): validate request -> resolve chain -> fetch metadata/pools -> score routes -> cache/store quote -> build swap calldata.
 
-`apps/server/src/index.ts` (single-file route handler, no controller layer):
-1. Zod validates request → `resolveChain()` picks `ChainConfig` from `config/chains.ts`
-2. `TokenService` resolves metadata (cached 5 min) → `PoolDiscovery` finds pools via multicall + AequiLens
-3. `PriceService.getBestQuoteForTokens()` scores routes by net output (amount − gas) with optional split routing
-4. `/quote` stores result in `QuoteStore` (TTL-based) → returns `quoteId` + `expiresAt`
-5. `/swap` consumes stored quote (or fetches fresh), calls `SwapBuilder.build()` → returns calldata + gas estimate via RPC simulation with state overrides
+## Build and Test
 
-## Key conventions
+Run from repo root unless noted:
 
-- **All amounts are `bigint`**; prices use Q18 fixed-point (1.0 = `10n ** 18n`). Never use `number` for token/gas amounts.
-- **Addresses**: normalize with `viem` `getAddress()`, then lowercase for comparisons. Native token sentinel: `0xEeeeeEeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee`.
-- **Error handling**: Use `AequiError` subclasses from `packages/core/src/errors.ts` with stable `ErrorCode` enum values (e.g., `invalid_request`, `no_route_found`, `quote_expired`). Server error handler in `middleware/error-handler.ts` converts all errors to JSON with `{ error, message, statusCode, retryable }`.
-- **Route preference**: `'auto' | 'v2' | 'v3'` — auto tries V3 first, falls back to V2.
-- **Server types**: `apps/server/src/types.ts` re-exports from `@aequi/core` — don't duplicate types.
-- **Config**: env parsing in `config/app-config.ts` (with defaults), chain/DEX registry in `config/chains.ts`, intermediate tokens + executor map in `config/constants.ts`.
-- **DEX adapters**: Extend `BaseDexAdapter` from `@aequi/pricing`, register via `dexRegistry.register()`. Adapters are keyed by `"${protocol}-${version}"` (e.g., `"uniswap-v3"`).
-- **Fastify logger** disabled when `NODE_ENV=test`.
+- `bun install`
+- `npm run dev`
+- `npm run build`
+- `npm run lint`
+- `npm run check-types`
+- `npm run test`
 
-## Workflows
+Area-specific commands:
 
-```sh
-bun install                            # install deps (workspace root)
-npm run dev                            # turbo dev — all apps hot-reload
-cd apps/server && bun run index.ts     # server only (0.0.0.0:3000)
-cd apps/web && bun run dev             # web only (localhost:5173)
-npm run lint && npm run check-types    # CI checks (turbo-orchestrated, depend on ^build)
-npm run build                          # production build all
-```
+- `cd apps/server && bun run index.ts`
+- `cd apps/web && bun run dev`
+- `cd packages/core && npx vitest`
+- `cd packages/pricing && npx vitest`
+- `cd packages/contracts && npx hardhat compile`
+- `cd packages/contracts && npx hardhat test`
 
-**Tests**: Vitest with `globals: true`. Tests live in `__tests__/` dirs. Run per-package: `cd packages/core && npx vitest` or `cd packages/pricing && npx vitest`.
+## Conventions
 
-**Contracts**: From `packages/contracts` — `npx hardhat compile`, `npx hardhat test`, deploy via `npx hardhat ignition deploy ignition/modules/AequiExecutor.js --network <name>`.
+- Route preference is `'auto' | 'v2' | 'v3'`; auto prefers V3 then falls back to V2.
+- Native token sentinel is `0xEeeeeEeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee`.
+- DEX adapters are keyed by `${protocol}-${version}` and must be registered before pricing logic runs.
+- Fastify logger is disabled in tests (`NODE_ENV=test`).
+- Keep chain/DEX config in `apps/server/src/config/chains.ts` and env parsing/defaults in `apps/server/src/config/app-config.ts`.
 
-## API surface
+## Pitfalls
 
-`GET /health[/live|/ready]`, `GET /exchange`, `GET /token`, `GET /allowance`, `POST /approve`, `GET /price`, `GET /quote`, `POST /swap` — all accept `chain` param. `/swap` returns calldata + block metadata + `simulationPassed` flag.
+- Server startup requires at least one RPC URL (`RPC_URL_ETH` or `BSC_RPC_URL`) to pass env validation.
+- Ethereum executor address has no default; ensure `AEQUI_EXECUTOR_ETH` is configured when Ethereum swaps are expected.
+- Quote TTL defaults are short; stale quote IDs can expire quickly in `/swap` flows.
+- `apps/server` currently has no real lint task (`lint` script is a placeholder echo).
 
-## Frontend patterns
+## Reference Docs
 
-- Axios client with `VITE_API_BASE_URL` in `apps/web/src/lib/http.ts`; all API calls centralized in `services/aequi-api.ts`.
-- Wagmi config in `lib/wagmi.ts` (mainnet + BSC, MetaMask + injected connectors).
-- Custom tokens persisted via `TokenManager` singleton (localStorage key: `aequi_imported_tokens`).
-- `App.tsx` is the main swap form — single-component state machine, no router.
-
-## Extending chains/DEXes
-
-1. Add `ChainConfig` entry in `apps/server/src/config/chains.ts` with DEX configs (factory, router, quoter, fee tiers, `useRouter02` flag).
-2. Add intermediate tokens + executor address in `config/constants.ts`.
-3. Add RPC env vars in `config/app-config.ts`.
-4. If new protocol: create adapter in `packages/dex-adapters`, extend `BaseDexAdapter`, register in `registerDefaultAdapters()`.
-5. Update `ChainKey` union in `packages/core/src/types.ts`.
-6. Add chain to `wagmiConfig` transports and `CHAIN_BY_KEY` in `apps/web/src/lib/wagmi.ts`.
+- Overview and workspace scripts: [README.md](../README.md)
+- Server API and internals: [apps/server/README.md](../apps/server/README.md)
+- Frontend behavior: [apps/web/README.md](../apps/web/README.md)
+- Shared types/errors/swap builder: [packages/core/README.md](../packages/core/README.md)
+- Pricing and routing details: [packages/pricing/README.md](../packages/pricing/README.md)
+- Adapter implementation patterns: [packages/dex-adapters/README.md](../packages/dex-adapters/README.md)
+- Smart contract workflow: [packages/contracts/README.md](../packages/contracts/README.md)
 

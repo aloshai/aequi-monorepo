@@ -26,14 +26,8 @@ interface SwapState {
   swapExecutionLoading: boolean
   swapExecutionError: string | null
   swapHash: string | null
-  swapConfirmModalOpen: boolean
 
   swapHistory: SwapHistoryEntry[]
-
-  walletError: string | null
-  connectBusy: boolean
-  disconnectBusy: boolean
-  switchBusy: boolean
 
   setSelectedChain: (chain: ChainKey) => void
   setTokenA: (token: Token | null) => void
@@ -57,12 +51,6 @@ interface SwapState {
   setSwapExecutionLoading: (loading: boolean) => void
   setSwapExecutionError: (error: string | null) => void
   setSwapHash: (hash: string | null) => void
-  setSwapConfirmModalOpen: (open: boolean) => void
-
-  setWalletError: (error: string | null) => void
-  setConnectBusy: (busy: boolean) => void
-  setDisconnectBusy: (busy: boolean) => void
-  setSwitchBusy: (busy: boolean) => void
 
   addToHistory: (entry: SwapHistoryEntry) => void
   updateHistoryStatus: (hash: string, status: SwapHistoryEntry['status']) => void
@@ -97,14 +85,8 @@ export const useSwapStore = create<SwapState>()(
       swapExecutionLoading: false,
       swapExecutionError: null,
       swapHash: null,
-      swapConfirmModalOpen: false,
 
       swapHistory: [],
-
-      walletError: null,
-      connectBusy: false,
-      disconnectBusy: false,
-      switchBusy: false,
 
       setSelectedChain: (chain) => set({ selectedChain: chain }),
       setTokenA: (token) => set({ tokenA: token }),
@@ -131,12 +113,6 @@ export const useSwapStore = create<SwapState>()(
       setSwapExecutionLoading: (loading) => set({ swapExecutionLoading: loading }),
       setSwapExecutionError: (error) => set({ swapExecutionError: error }),
       setSwapHash: (hash) => set({ swapHash: hash }),
-      setSwapConfirmModalOpen: (open) => set({ swapConfirmModalOpen: open }),
-
-      setWalletError: (error) => set({ walletError: error }),
-      setConnectBusy: (busy) => set({ connectBusy: busy }),
-      setDisconnectBusy: (busy) => set({ disconnectBusy: busy }),
-      setSwitchBusy: (busy) => set({ switchBusy: busy }),
 
       addToHistory: (entry) => {
         const history = [entry, ...get().swapHistory]
@@ -189,7 +165,9 @@ export const useSwapStore = create<SwapState>()(
               }
               localStorage.removeItem('aequi_swap_history')
             }
-          } catch {}
+          } catch {
+            // Ignore invalid legacy history payloads during hydration.
+          }
         }
       },
     },

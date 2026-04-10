@@ -10,6 +10,20 @@ export const http = axios.create({
 export const resolveApiErrorMessage = (error: unknown): string => {
   if (axios.isAxiosError(error)) {
     const payload = error.response?.data as { message?: string; error?: string } | undefined
+    const status = error.response?.status
+
+    if (payload?.error === 'quote_expired' || status === 410) {
+      return 'Quote expired — refresh quote to continue.'
+    }
+
+    if (payload?.error === 'quote_not_found') {
+      return 'Quote not found — request a fresh quote.'
+    }
+
+    if (payload?.error === 'quote_mismatch') {
+      return 'Quote mismatch — refresh quote with current inputs.'
+    }
+
     if (payload?.message) {
       return payload.message
     }

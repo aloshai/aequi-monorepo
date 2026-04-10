@@ -1,6 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { motion } from 'framer-motion'
+import { AlertTriangle } from 'lucide-react'
 import type { SwapResponse } from '../types/api'
 import { getTokenLogo } from '../utils/logos'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 
 interface SwapConfirmModalProps {
   isOpen: boolean
@@ -12,6 +18,15 @@ interface SwapConfirmModalProps {
   chain: string
 }
 
+const formatBigIntDisplay = (raw: string | number | bigint, decimals: number, precision = 6): string => {
+  const value = BigInt(raw)
+  const divisor = 10n ** BigInt(decimals)
+  const whole = value / divisor
+  const remainder = value - whole * divisor
+  const fracStr = remainder.toString().padStart(decimals, '0').slice(0, precision)
+  return `${whole}.${fracStr}`
+}
+
 export function SwapConfirmModal({
   isOpen,
   onClose,
@@ -19,19 +34,15 @@ export function SwapConfirmModal({
   swapData,
   loading,
   error,
-  chain
+  chain,
 }: SwapConfirmModalProps) {
   const tokenIn = swapData?.tokens[0]
   const tokenOut = swapData?.tokens[swapData.tokens.length - 1]
+  const [impactAccepted, setImpactAccepted] = useState(false)
 
-  const formatBigIntDisplay = (raw: string | number | bigint, decimals: number, precision = 6): string => {
-    const value = BigInt(raw)
-    const divisor = 10n ** BigInt(decimals)
-    const whole = value / divisor
-    const remainder = value - whole * divisor
-    const fracStr = remainder.toString().padStart(decimals, '0').slice(0, precision)
-    return `${whole}.${fracStr}`
-  }
+  useEffect(() => {
+    if (!isOpen) setImpactAccepted(false)
+  }, [isOpen])
 
   const amountIn = useMemo(() => {
     if (!swapData || !tokenIn) return '0'
@@ -48,190 +59,165 @@ export function SwapConfirmModal({
     return formatBigIntDisplay(swapData.transaction.amountOutMinimum, tokenOut.decimals)
   }, [swapData, tokenOut])
 
-  const priceImpact = useMemo(() => {
-    if (!swapData) return '0'
-    return (swapData.priceImpactBps / 100).toFixed(2)
-  }, [swapData])
-
   const routePath = useMemo(() => {
-    if (!swapData || !swapData.tokens || swapData.tokens.length <= 2) return []
-    // Get intermediate tokens (exclude first and last - those are input/output)
-    const intermediateTokens = swapData.tokens.slice(1, -1)
-    return intermediateTokens
+    if (!swapData || swapData.tokens.length <= 2) return []
+    return swapData.tokens.slice(1, -1)
   }, [swapData])
 
-  const estimatedGas = useMemo(() => {
-    if (!swapData?.transaction.estimatedGas) return null
-    return swapData.transaction.estimatedGas
+  const priceImpact = useMemo(() => {
+    if (!swapData) return 0
+    return swapData.priceImpactBps / 100
   }, [swapData])
 
+  const estimatedGas = swapData?.transaction.estimatedGas ?? null
   const simulationPassed = swapData?.simulationPassed ?? false
-  const isExtremeImpact = Number(priceImpact) > 15
-  const [impactAccepted, setImpactAccepted] = useState(false)
-
-  if (!isOpen) return null
+  const isExtremeImpact = priceImpact > 15
+  const isHighImpact = priceImpact > 5 && priceImpact <= 15
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content swap-confirm-modal" onClick={(e) => e.stopPropagation()}>
-        <button className="modal-close-btn" onClick={onClose}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && !loading && onClose()}>
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-hidden border-border bg-card p-0">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.24, ease: 'easeOut' }}
+          className="flex max-h-[90vh] flex-col"
+        >
+          <DialogHeader className="border-b border-border px-6 py-4">
+            <DialogTitle>Confirm Swap</DialogTitle>
+            <DialogDescription>
+              Review route, impact, and transaction details before execution.
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className="modal-body">
-          <div className="swap-summary">
-            <div className="swap-summary-item">
-              <div className="swap-summary-token">
-                {tokenIn && (getTokenLogo(tokenIn.symbol)) && (
-                  <img src={getTokenLogo(tokenIn.symbol)} alt={tokenIn.symbol} className="token-icon-large" />
-                )}
-                <div className="swap-summary-details">
-                  <span className="swap-summary-label">You Pay</span>
-                  <span className="swap-summary-amount">{amountIn} {tokenIn?.symbol}</span>
+          <div className="space-y-4 overflow-y-auto px-6 py-5">
+            <Card className="border-border bg-background">
+              <CardContent className="space-y-3 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    {tokenIn && getTokenLogo(tokenIn.symbol) && (
+                      <img src={getTokenLogo(tokenIn.symbol)} alt={tokenIn.symbol} className="h-10 w-10 rounded-full object-cover" />
+                    )}
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">You Pay</p>
+                      <p className="text-lg font-semibold">{amountIn} {tokenIn?.symbol}</p>
+                    </div>
+                  </div>
+                  <Badge variant="outline">{chain}</Badge>
                 </div>
-              </div>
-            </div>
 
-            <div className="swap-arrow">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <polyline points="19 12 12 19 5 12"></polyline>
-              </svg>
-              {routePath.length > 0 && (
-                <div className="intermediate-tokens">
-                  {routePath.map((token, idx) => (
-                    <span key={idx} className="intermediate-token">
-                      {token.symbol}
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span>{tokenIn?.symbol}</span>
+                  {routePath.length > 0 && routePath.map((token) => (
+                    <span key={token.address} className="inline-flex items-center gap-2">
+                      <span>{'->'}</span>
+                      <span>{token.symbol}</span>
                     </span>
                   ))}
+                  <span>{'->'}</span>
+                  <span>{tokenOut?.symbol}</span>
                 </div>
-              )}
-            </div>
 
-            <div className="swap-summary-item">
-              <div className="swap-summary-token">
-                {tokenOut && (getTokenLogo(tokenOut.symbol)) && (
-                  <img src={getTokenLogo(tokenOut.symbol)} alt={tokenOut.symbol} className="token-icon-large" />
-                )}
-                <div className="swap-summary-details">
-                  <span className="swap-summary-label">You Receive</span>
-                  <span className="swap-summary-amount">{amountOut} {tokenOut?.symbol}</span>
+                <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
+                  <div className="flex items-center gap-3">
+                    {tokenOut && getTokenLogo(tokenOut.symbol) && (
+                      <img src={getTokenLogo(tokenOut.symbol)} alt={tokenOut.symbol} className="h-10 w-10 rounded-full object-cover" />
+                    )}
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">You Receive</p>
+                      <p className="text-lg font-semibold">{amountOut} {tokenOut?.symbol}</p>
+                    </div>
+                  </div>
+                  <Badge variant={simulationPassed ? 'success' : 'warning'}>
+                    {simulationPassed ? 'Simulation Passed' : 'Simulation Unverified'}
+                  </Badge>
                 </div>
-              </div>
-            </div>
-          </div>
+              </CardContent>
+            </Card>
 
-          <div className="swap-details">
-            <div className="swap-detail-row">
-              <span className="swap-detail-label">Network</span>
-              <span className="swap-detail-value">{chain}</span>
-            </div>
-
-            <div className="swap-detail-row">
-              <span className="swap-detail-label">Route</span>
-              <span className="swap-detail-value route-display">
-                {swapData?.isSplit && swapData.splits ? (
-                  <span className="split-route-summary">
-                    Split: {swapData.splits.map((leg, i) => (
-                      <span key={i}>
-                        {i > 0 && ' + '}
-                        {(leg.ratioBps / 100).toFixed(0)}% {leg.quote.source}
-                      </span>
-                    ))}
+            <Card className="border-border bg-muted/30">
+              <CardContent className="space-y-2 p-4 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Rate</span>
+                  <span className="font-medium">
+                    1 {tokenIn?.symbol} = {swapData ? (Number(amountOut) / Number(amountIn)).toFixed(6) : '0'} {tokenOut?.symbol}
                   </span>
-                ) : (
-                  <>
-                    {tokenIn?.symbol}
-                    {routePath.length > 0 && routePath.map((token, idx) => (
-                      <span key={idx}>
-                        <span className="route-arrow"> → </span>
-                        {token.symbol}
-                      </span>
-                    ))}
-                  </>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Price Impact</span>
+                  <span className={priceImpact > 5 ? 'font-semibold text-amber-600' : 'font-medium'}>{priceImpact.toFixed(2)}%</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Minimum Received</span>
+                  <span className="font-medium">{minimumReceived} {tokenOut?.symbol}</span>
+                </div>
+                {estimatedGas && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Estimated Gas</span>
+                    <span className="font-medium">{estimatedGas}</span>
+                  </div>
                 )}
-              </span>
-            </div>
+                {swapData && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Deadline</span>
+                    <span className="font-medium">{new Date(swapData.deadline * 1000).toLocaleTimeString()}</span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
-            <div className="swap-detail-row">
-              <span className="swap-detail-label">Rate</span>
-              <span className="swap-detail-value">
-                1 {tokenIn?.symbol} = {swapData ? (Number(amountOut) / Number(amountIn)).toFixed(6) : '0'} {tokenOut?.symbol}
-              </span>
-            </div>
-
-            <div className="swap-detail-row">
-              <span className="swap-detail-label">Price Impact</span>
-              <span className={`swap-detail-value ${Number(priceImpact) > 5 ? 'warning' : ''}`}>
-                {priceImpact}%
-              </span>
-            </div>
-
-            {Number(priceImpact) > 15 && (
-              <div className="error-message" style={{ marginTop: '8px', fontSize: '13px' }}>
-                ⚠️ Price impact is extremely high ({priceImpact}%). You may lose a significant portion of your funds.
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={impactAccepted} onChange={(e) => setImpactAccepted(e.target.checked)} />
-                  I understand the risk and wish to proceed
+            {isExtremeImpact && (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700">
+                <div className="mb-2 flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  <span>Price impact is extremely high ({priceImpact.toFixed(2)}%). You may lose a significant portion of funds.</span>
+                </div>
+                <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-border"
+                    checked={impactAccepted}
+                    onChange={(e) => setImpactAccepted(e.target.checked)}
+                  />
+                  I understand the risk and want to proceed.
                 </label>
               </div>
             )}
 
-            {Number(priceImpact) > 5 && Number(priceImpact) <= 15 && (
-              <div className="error-message" style={{ marginTop: '8px', fontSize: '13px', background: 'rgba(255, 170, 0, 0.1)' }}>
-                ⚠️ Price impact is high ({priceImpact}%). Please verify the trade details.
+            {isHighImpact && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                Price impact is high ({priceImpact.toFixed(2)}%). Double-check route details before execution.
               </div>
             )}
 
-            <div className="swap-detail-row">
-              <span className="swap-detail-label">Minimum Received</span>
-              <span className="swap-detail-value">{minimumReceived} {tokenOut?.symbol}</span>
-            </div>
-
-            {estimatedGas && (
-              <div className="swap-detail-row">
-                <span className="swap-detail-label">Estimated Gas</span>
-                <span className="swap-detail-value">{estimatedGas}</span>
+            {!simulationPassed && swapData && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                On-chain simulation could not verify this transaction. Execution may fail if pool state changes.
               </div>
             )}
 
-            {swapData && (
-              <div className="swap-detail-row">
-                <span className="swap-detail-label">Deadline</span>
-                <span className="swap-detail-value">{new Date(swapData.deadline * 1000).toLocaleTimeString()}</span>
+            {error && (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {error}
               </div>
             )}
           </div>
 
-          {!simulationPassed && swapData && (
-            <div className="error-message" style={{ marginTop: '16px', fontSize: '13px' }}>
-              ⚠️ On-chain simulation could not verify this transaction. The swap may fail if pool liquidity is insufficient.
-            </div>
-          )}
-
-          {error && (
-            <div className="error-message" style={{ marginTop: '16px' }}>
-              {error}
-            </div>
-          )}
-        </div>
-
-        <div className="modal-footer">
-          <button className="modal-btn modal-btn-secondary" onClick={onClose} disabled={loading}>
-            Cancel
-          </button>
-          <button 
-            className="modal-btn modal-btn-primary" 
-            onClick={onConfirm}
-            disabled={loading || !swapData || (isExtremeImpact && !impactAccepted)}
-          >
-            {loading ? 'Processing...' : isExtremeImpact && !impactAccepted ? 'Accept Risk to Swap' : 'Execute Swap'}
-          </button>
-        </div>
-      </div>
-    </div>
+          <DialogFooter className="border-t border-border px-6 py-4">
+            <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={onConfirm}
+              disabled={loading || !swapData || (isExtremeImpact && !impactAccepted)}
+              className="min-w-36"
+            >
+              {loading ? 'Processing...' : isExtremeImpact && !impactAccepted ? 'Accept Risk to Swap' : 'Execute Swap'}
+            </Button>
+          </DialogFooter>
+        </motion.div>
+      </DialogContent>
+    </Dialog>
   )
 }

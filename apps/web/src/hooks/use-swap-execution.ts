@@ -3,6 +3,7 @@ import { useSendTransaction } from 'wagmi'
 import { waitForTransactionReceipt } from 'wagmi/actions'
 import { useSwapStore } from '../store/use-swap-store'
 import { useSettingsStore } from '../store/use-settings-store'
+import { useUiStore } from '../store/use-ui-store'
 import {
   fetchAllowances,
   requestApproveCalldata,
@@ -57,7 +58,11 @@ export function useSwapExecution(
       if (resp) {
         const entry = resp.allowances.find(a => a.token.toLowerCase() === tokenAddr.toLowerCase())
         if (entry) {
-          try { if (BigInt(entry.allowance) >= required) return true } catch {}
+          try {
+            if (BigInt(entry.allowance) >= required) return true
+          } catch {
+            // Ignore malformed allowance strings and continue retry loop.
+          }
         }
       }
       if (i < 3) await new Promise(r => setTimeout(r, 1500))
@@ -113,7 +118,7 @@ export function useSwapExecution(
 
       store.setPreparedSwap(swapData)
       store.setPrepareLoading(false)
-      store.setSwapConfirmModalOpen(true)
+      useUiStore.getState().setSwapConfirmModalOpen(true)
     } catch (e) {
       store.setPrepareError(resolveApiErrorMessage(e))
       store.setPrepareLoading(false)
@@ -146,7 +151,9 @@ export function useSwapExecution(
             if (BigInt(entry.allowance) >= BigInt(preparedSwap.transaction.amountIn)) {
               needsApproval = false
             }
-          } catch {}
+          } catch {
+            // Ignore malformed allowance values and fall back to approval flow.
+          }
         }
       }
 
@@ -215,7 +222,7 @@ export function useSwapExecution(
       store.setSwapHash(null)
       store.setQuoteResult(null)
       store.setAmount('')
-      store.setSwapConfirmModalOpen(false)
+      useUiStore.getState().setSwapConfirmModalOpen(false)
       store.setPreparedSwap(null)
     } catch (e) {
       const currentStore = useSwapStore.getState()

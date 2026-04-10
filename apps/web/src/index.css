@@ -1,20 +1,20 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 
 :root {
-  --bg-primary: #09090b;
-  --bg-secondary: #18181b;
-  --bg-tertiary: #27272a;
-  --bg-elevated: #1c1c1f;
-  --border-primary: rgba(255, 255, 255, 0.08);
-  --border-secondary: rgba(255, 255, 255, 0.04);
-  --text-primary: #fafafa;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
-  --accent: #fafafa;
-  --accent-dim: rgba(250, 250, 250, 0.12);
-  --success: #22c55e;
-  --danger: #ef4444;
-  --warning: #f59e0b;
+  --bg-primary: #f7f9fc;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f2f5fa;
+  --bg-elevated: #ffffff;
+  --border-primary: #dbe2ee;
+  --border-secondary: #e7ecf4;
+  --text-primary: #101828;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --accent: #2563eb;
+  --accent-dim: rgba(37, 99, 235, 0.1);
+  --success: #0f766e;
+  --danger: #b91c1c;
+  --warning: #a16207;
   --radius-s: 8px;
   --radius-m: 12px;
   --radius-l: 16px;
@@ -25,12 +25,17 @@
 
 body {
   background-color: var(--bg-primary);
+  background-image:
+    radial-gradient(circle at 8% -16%, rgba(37, 99, 235, 0.09), transparent 36%),
+    radial-gradient(circle at 92% -14%, rgba(109, 40, 217, 0.07), transparent 34%),
+    linear-gradient(180deg, #fbfcff 0%, #f7f9fd 56%, #f4f6fb 100%);
   color: var(--text-primary);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: 'Manrope', 'Segoe UI', sans-serif;
   margin: 0;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-attachment: fixed;
 }
 
 #root {
@@ -47,7 +52,8 @@ body {
   align-items: center;
   justify-content: center;
   padding: 0 24px;
-  background: var(--bg-primary);
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(10px);
   position: sticky;
   top: 0;
   z-index: 100;
@@ -315,19 +321,20 @@ body {
   width: 32px;
   height: 32px;
   border-radius: var(--radius-s);
-  background: var(--bg-tertiary);
-  border: 3px solid var(--bg-secondary);
+  background: var(--bg-secondary);
+  border: 3px solid var(--bg-primary);
   color: var(--text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all var(--transition);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
 }
 
 .swap-toggle-btn:hover {
-  color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.15);
+  color: var(--accent);
+  background: var(--bg-tertiary);
 }
 
 /* ── Action Button ── */
@@ -357,8 +364,8 @@ body {
 /* ── Error / Info Messages ── */
 .error-message {
   padding: 10px 12px;
-  background: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.2);
+  background: #fef2f2;
+  border: 1px solid #fecaca;
   color: var(--danger);
   border-radius: var(--radius-s);
   font-size: 0.8rem;
@@ -369,8 +376,8 @@ body {
 
 .info-message {
   padding: 10px 12px;
-  background: rgba(34, 197, 94, 0.08);
-  border: 1px solid rgba(34, 197, 94, 0.2);
+  background: #f0fdfa;
+  border: 1px solid #99f6e4;
   color: var(--success);
   border-radius: var(--radius-s);
   font-size: 0.8rem;
@@ -418,8 +425,8 @@ body {
 
 .high-impact-banner {
   padding: 10px 16px;
-  background: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.15);
+  background: #fef2f2;
+  border: 1px solid #fecaca;
   border-radius: var(--radius-s);
   color: var(--danger);
   font-size: 0.8rem;
@@ -592,10 +599,10 @@ body {
 
 .offers-table th {
   text-align: left;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   font-weight: 600;
   color: var(--text-muted);
-  padding: 6px 8px;
+  padding: 9px 10px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
   border-bottom: 1px solid var(--border-secondary);
@@ -604,7 +611,7 @@ body {
 .offers-table th:not(:first-child) { text-align: right; }
 
 .offers-table td {
-  padding: 8px;
+  padding: 11px 10px;
   font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
   border-bottom: 1px solid var(--border-secondary);
@@ -614,8 +621,17 @@ body {
 
 .offers-table tr:last-child td { border-bottom: none; }
 
+.offers-table tbody tr {
+  transition: background-color var(--transition);
+}
+
+.offers-table tbody tr:hover {
+  background: rgba(37, 99, 235, 0.05);
+}
+
 .offers-table .best-row {
-  background: rgba(34, 197, 94, 0.04);
+  background: rgba(37, 99, 235, 0.08);
+  box-shadow: inset 3px 0 0 rgba(37, 99, 235, 0.82);
 }
 
 .offer-source-tag {
@@ -700,7 +716,10 @@ body {
   color: var(--text-muted);
   font-size: 0.8rem;
   width: 100%;
-  max-width: 480px;
+  max-width: 560px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-m);
+  background: rgba(255, 255, 255, 0.7);
 }
 
 .spinner {
@@ -1171,9 +1190,9 @@ body {
 .debug-options {
   margin-top: 4px;
   padding: 10px 12px;
-  background: rgba(245, 158, 11, 0.06);
+  background: #fffbeb;
   border-radius: var(--radius-s);
-  border: 1px solid rgba(245, 158, 11, 0.2);
+  border: 1px solid #fcd34d;
   font-size: 0.75rem;
   color: var(--warning);
 }
@@ -1188,14 +1207,14 @@ body {
 .debug-options p {
   margin: 2px 0 0 22px;
   font-size: 0.65rem;
-  color: rgba(245, 158, 11, 0.6);
+  color: #a16207;
 }
 
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.08); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.15); }
+::-webkit-scrollbar-thumb { background: rgba(100, 116, 139, 0.25); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.4); }
 
 /* ── Responsive ── */
 @media (max-width: 520px) {

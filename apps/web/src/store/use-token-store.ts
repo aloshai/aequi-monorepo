@@ -50,7 +50,9 @@ export const useTokenStore = create<TokenState>()(
               }
               localStorage.removeItem(LEGACY_KEY)
             }
-          } catch {}
+          } catch {
+            // Ignore invalid legacy token payloads during hydration.
+          }
         }
       },
     },

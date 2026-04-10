@@ -1,5 +1,8 @@
+import { motion } from 'framer-motion'
 import type { QuoteResponse, RouteToken } from '../types/api'
 import { getTokenLogo } from '../utils/logos'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 
 interface RouteVisualProps {
   quote: QuoteResponse
@@ -9,8 +12,17 @@ interface RouteVisualProps {
 function RouteTokenNode({ symbol }: { symbol: string }) {
   const logo = getTokenLogo(symbol)
   return (
-    <span className="route-node">
-      {logo && <img src={logo} alt={symbol} className="route-node__icon" onError={(e) => (e.currentTarget.style.display = 'none')} />}
+    <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-1 text-xs font-medium">
+      {logo && (
+        <img
+          src={logo}
+          alt={symbol}
+          className="h-4 w-4 rounded-full object-cover"
+          onError={(e) => {
+            e.currentTarget.style.display = 'none'
+          }}
+        />
+      )}
       {symbol}
     </span>
   )
@@ -20,23 +32,21 @@ function PoolConnector({ dexId, feeTier, version }: { dexId: string; feeTier?: n
   const dexName = dexId.split('-')[0]
   const fee = feeTier ? `${feeTier / 10000}%` : ''
   return (
-    <span className="route-connector">
-      <span className="route-connector__arrow">→</span>
-      <span className="route-connector__pool">
-        {dexName}{version ? ` ${version}` : ''}{fee ? ` · ${fee}` : ''}
-      </span>
+    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+      <span>{'->'}</span>
+      <span>{dexName}{version ? ` ${version}` : ''}{fee ? ` ${fee}` : ''}</span>
     </span>
   )
 }
 
 function SingleRoute({ quote }: { quote: QuoteResponse }) {
   return (
-    <div className="route-path">
+    <div className="flex flex-wrap items-center gap-2">
       {quote.tokens.map((token, idx) => {
         const isLast = idx === quote.tokens.length - 1
         const pool = !isLast ? quote.pools[idx] : null
         return (
-          <span key={token.address} style={{ display: 'contents' }}>
+          <span key={token.address} className="inline-flex items-center gap-2">
             <RouteTokenNode symbol={token.symbol} />
             {!isLast && pool && (
               <PoolConnector dexId={pool.dexId} feeTier={pool.feeTier} version={quote.hopVersions[idx]} />
@@ -49,44 +59,76 @@ function SingleRoute({ quote }: { quote: QuoteResponse }) {
 }
 
 export function RouteVisual({ quote, tokenB }: RouteVisualProps) {
-  return (
-    <div className="route-visual">
-      <div className="route-visual__header">
-        Route
-        {quote.isSplit && <span className="route-visual__split-badge">Split</span>}
-      </div>
+  const hopCount = quote.tokens.length - 1
+  const sourceCount = quote.sources.length
+  const dexCount = new Set(quote.pools.map((pool) => pool.dexId.split('-')[0])).size
+  const routeComplexity = hopCount <= 1 ? 'Simple' : hopCount <= 2 ? 'Balanced' : 'Complex'
 
-      {quote.isSplit && quote.splits ? (
-        <div>
-          {quote.splits.map((leg, i) => (
-            <div key={i} className="split-leg">
-              <div className="split-leg__header">
-                <span className="split-leg__ratio">{(leg.ratioBps / 100).toFixed(0)}%</span>
-                <span className="split-leg__source">{leg.quote.source}</span>
-                <span className="split-leg__amount">
-                  {(Number(leg.quote.amountOut) / 10 ** tokenB.decimals).toFixed(4)} {tokenB.symbol}
-                </span>
-              </div>
-              <div className="route-path">
-                {leg.quote.tokens.map((token, idx) => {
-                  const isLast = idx === leg.quote.tokens.length - 1
-                  const pool = !isLast ? leg.quote.pools[idx] : null
-                  return (
-                    <span key={token.address} style={{ display: 'contents' }}>
-                      <RouteTokenNode symbol={token.symbol} />
-                      {!isLast && pool && (
-                        <PoolConnector dexId={pool.dexId} feeTier={pool.feeTier} version={leg.quote.hopVersions[idx]} />
-                      )}
-                    </span>
-                  )
-                })}
-              </div>
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.24, ease: 'easeOut' }}
+      className="w-full max-w-[560px]"
+    >
+      <Card className="border-border bg-card">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="text-base">Route Breakdown</CardTitle>
+            {quote.isSplit && <Badge variant="secondary">Split Route</Badge>}
+          </div>
+        </CardHeader>
+
+        <CardContent className="space-y-3">
+          <div className="grid gap-2 sm:grid-cols-3">
+            <div className="rounded-md border border-border bg-muted/40 px-3 py-2">
+              <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Complexity</p>
+              <p className="text-sm font-semibold text-foreground">{routeComplexity}</p>
             </div>
-          ))}
-        </div>
-      ) : (
-        <SingleRoute quote={quote} />
-      )}
-    </div>
+            <div className="rounded-md border border-border bg-muted/40 px-3 py-2">
+              <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Topology</p>
+              <p className="text-sm font-semibold text-foreground">{hopCount} hop · {dexCount} DEX</p>
+            </div>
+            <div className="rounded-md border border-border bg-muted/40 px-3 py-2">
+              <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Sources</p>
+              <p className="text-sm font-semibold text-foreground">{sourceCount} pools</p>
+            </div>
+          </div>
+
+          {quote.isSplit && quote.splits ? (
+            <div className="space-y-3">
+              {quote.splits.map((leg, i) => (
+                <div key={i} className="rounded-md border border-border bg-muted/30 p-3">
+                  <div className="mb-2 flex items-center justify-between gap-2 text-xs">
+                    <Badge variant="outline">{(leg.ratioBps / 100).toFixed(0)}%</Badge>
+                    <span className="text-muted-foreground">{leg.quote.source}</span>
+                    <span className="font-medium text-foreground">
+                      {(Number(leg.quote.amountOut) / 10 ** tokenB.decimals).toFixed(4)} {tokenB.symbol}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {leg.quote.tokens.map((token, idx) => {
+                      const isLast = idx === leg.quote.tokens.length - 1
+                      const pool = !isLast ? leg.quote.pools[idx] : null
+                      return (
+                        <span key={token.address} className="inline-flex items-center gap-2">
+                          <RouteTokenNode symbol={token.symbol} />
+                          {!isLast && pool && (
+                            <PoolConnector dexId={pool.dexId} feeTier={pool.feeTier} version={leg.quote.hopVersions[idx]} />
+                          )}
+                        </span>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <SingleRoute quote={quote} />
+          )}
+        </CardContent>
+      </Card>
+    </motion.section>
   )
 }

@@ -18,6 +18,7 @@ export function useQuotePoller() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const refreshingOnExpiryRef = useRef(false)
 
   const fetchQuote = useCallback(async () => {
     const tA = tokenA?.address
@@ -65,9 +66,18 @@ export function useQuotePoller() {
 
         intervalRef.current = setInterval(fetchQuote, QUOTE_INTERVAL_MS)
         countdownRef.current = setInterval(() => {
-          useSwapStore.setState((s) => ({
-            quoteCountdown: Math.max(0, s.quoteCountdown - 1),
-          }))
+          let nextCountdown = 0
+          useSwapStore.setState((s) => {
+            nextCountdown = Math.max(0, s.quoteCountdown - 1)
+            return { quoteCountdown: nextCountdown }
+          })
+
+          if (nextCountdown === 0 && !refreshingOnExpiryRef.current) {
+            refreshingOnExpiryRef.current = true
+            void fetchQuote().finally(() => {
+              refreshingOnExpiryRef.current = false
+            })
+          }
         }, 1000)
       }
     }, DEBOUNCE_MS)
@@ -76,6 +86,7 @@ export function useQuotePoller() {
       clearTimeout(debounce)
       if (intervalRef.current) clearInterval(intervalRef.current)
       if (countdownRef.current) clearInterval(countdownRef.current)
+      abortRef.current?.abort()
     }
   }, [tokenA, tokenB, amount, fetchQuote])
 

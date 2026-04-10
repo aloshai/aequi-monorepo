@@ -1,4 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { motion } from 'framer-motion'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -13,6 +18,9 @@ interface SettingsModalProps {
   approvalMode: 'infinite' | 'exact'
   setApprovalMode: (value: 'infinite' | 'exact') => void
 }
+
+const ROUTE_OPTIONS = ['auto', 'v2', 'v3'] as const
+const QUICK_SLIPPAGE = [0.1, 0.5, 1.0]
 
 export function SettingsModal({
   isOpen,
@@ -31,22 +39,17 @@ export function SettingsModal({
   const [deadlineMinutes, setDeadlineMinutes] = useState('')
 
   useEffect(() => {
-    if (isOpen) {
-      if (slippageBps === 'auto') {
-        setCustomSlippage('')
-      } else {
-        const slippage = Number(slippageBps) / 100
-        if ([0.1, 0.5, 1.0].includes(slippage)) {
-          setCustomSlippage('')
-        } else {
-          setCustomSlippage(slippage.toString())
-        }
-      }
-      setDeadlineMinutes((Number(deadlineSeconds) / 60).toString())
-    }
-  }, [isOpen, slippageBps, deadlineSeconds])
+    if (!isOpen) return
 
-  if (!isOpen) return null
+    if (slippageBps === 'auto') {
+      setCustomSlippage('')
+    } else {
+      const slippage = Number(slippageBps) / 100
+      setCustomSlippage(QUICK_SLIPPAGE.includes(slippage) ? '' : slippage.toString())
+    }
+
+    setDeadlineMinutes((Number(deadlineSeconds) / 60).toString())
+  }, [isOpen, slippageBps, deadlineSeconds])
 
   const handleSlippageSelect = (value: number) => {
     setSlippageBps((value * 100).toString())
@@ -56,19 +59,19 @@ export function SettingsModal({
   const handleCustomSlippageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value
     setCustomSlippage(val)
-    if (val && !isNaN(Number(val))) {
-      const clamped = Math.min(Math.max(Number(val), 0), 50)
-      setSlippageBps((clamped * 100).toString())
-    }
+    if (!val || Number.isNaN(Number(val))) return
+
+    const clamped = Math.min(Math.max(Number(val), 0), 50)
+    setSlippageBps((clamped * 100).toString())
   }
 
   const handleDeadlineChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value
     setDeadlineMinutes(val)
-    if (val && !isNaN(Number(val))) {
-      const clamped = Math.min(Math.max(Number(val), 1), 60)
-      setDeadlineSeconds((clamped * 60).toString())
-    }
+    if (!val || Number.isNaN(Number(val))) return
+
+    const clamped = Math.min(Math.max(Number(val), 1), 60)
+    setDeadlineSeconds((clamped * 60).toString())
   }
 
   const isAuto = slippageBps === 'auto'
@@ -76,92 +79,111 @@ export function SettingsModal({
   const autoLabel = recommendedSlippageBps != null ? `Auto (${(recommendedSlippageBps / 100).toFixed(1)}%)` : 'Auto'
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content settings-modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <h3 className="modal-title">Settings</h3>
-          <button className="close-btn" onClick={onClose}>&times;</button>
-        </div>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-md border-border bg-card p-0">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+          className="overflow-hidden"
+        >
+          <DialogHeader className="border-b border-border px-5 py-4">
+            <DialogTitle>Settings</DialogTitle>
+            <DialogDescription>
+              Tune execution behavior for slippage, routing, and token approvals.
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className="settings-section">
-          <label className="settings-label">Slippage Tolerance</label>
-          <div className="slippage-options">
-            <button
-              className={`slippage-btn ${isAuto ? 'active' : ''}`}
-              onClick={() => { setSlippageBps('auto'); setCustomSlippage('') }}
-            >
-              {autoLabel}
-            </button>
-            {[0.1, 0.5, 1.0].map((val) => (
-              <button
-                key={val}
-                className={`slippage-btn ${!isAuto && currentSlippage === val && !customSlippage ? 'active' : ''}`}
-                onClick={() => handleSlippageSelect(val)}
-              >
-                {val}%
-              </button>
-            ))}
-            <div className={`custom-slippage-input ${customSlippage ? 'active' : ''}`}>
-              <input
-                type="number"
-                placeholder="Custom"
-                value={customSlippage}
-                onChange={handleCustomSlippageChange}
-                step="0.1"
-                min="0"
-                max="50"
-              />
-              <span>%</span>
-            </div>
-          </div>
-        </div>
+          <div className="space-y-5 px-5 py-5">
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Slippage Tolerance</p>
+                <Badge variant={isAuto ? 'secondary' : 'outline'}>{isAuto ? 'Auto' : 'Manual'}</Badge>
+              </div>
 
-        <div className="settings-section">
-          <label className="settings-label">Transaction Deadline</label>
-          <div className="deadline-input-container">
-            <input
-              type="number"
-              value={deadlineMinutes}
-              onChange={handleDeadlineChange}
-              min="1"
-            />
-            <span>minutes</span>
-          </div>
-        </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant={isAuto ? 'default' : 'outline'}
+                  onClick={() => {
+                    setSlippageBps('auto')
+                    setCustomSlippage('')
+                  }}
+                >
+                  {autoLabel}
+                </Button>
+                {QUICK_SLIPPAGE.map((val) => (
+                  <Button
+                    key={val}
+                    type="button"
+                    variant={!isAuto && currentSlippage === val && !customSlippage ? 'default' : 'outline'}
+                    onClick={() => handleSlippageSelect(val)}
+                  >
+                    {val}%
+                  </Button>
+                ))}
+              </div>
 
-        <div className="settings-section">
-          <label className="settings-label">Routing Preference</label>
-          <div className="routing-options">
-            {(['auto', 'v2', 'v3'] as const).map((v) => (
-              <button
-                key={v}
-                className={`routing-btn ${version === v ? 'active' : ''}`}
-                onClick={() => setVersion(v)}
-              >
-                {v.toUpperCase()}
-              </button>
-            ))}
-          </div>
-        </div>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  placeholder="Custom"
+                  value={customSlippage}
+                  onChange={handleCustomSlippageChange}
+                  step="0.1"
+                  min="0"
+                  max="50"
+                />
+                <span className="text-sm text-muted-foreground">%</span>
+              </div>
+            </section>
 
-        <div className="settings-section">
-          <label className="settings-label">Token Approval</label>
-          <div className="routing-options">
-            <button
-              className={`routing-btn ${approvalMode === 'exact' ? 'active' : ''}`}
-              onClick={() => setApprovalMode('exact')}
-            >
-              Exact Amount
-            </button>
-            <button
-              className={`routing-btn ${approvalMode === 'infinite' ? 'active' : ''}`}
-              onClick={() => setApprovalMode('infinite')}
-            >
-              Unlimited
-            </button>
+            <section className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Transaction Deadline</p>
+              <div className="flex items-center gap-2">
+                <Input type="number" value={deadlineMinutes} onChange={handleDeadlineChange} min="1" max="60" />
+                <span className="text-sm text-muted-foreground">minutes</span>
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Routing Preference</p>
+              <div className="grid grid-cols-3 gap-2">
+                {ROUTE_OPTIONS.map((value) => (
+                  <Button
+                    key={value}
+                    type="button"
+                    variant={version === value ? 'default' : 'outline'}
+                    onClick={() => setVersion(value)}
+                  >
+                    {value.toUpperCase()}
+                  </Button>
+                ))}
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Token Approval</p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant={approvalMode === 'exact' ? 'default' : 'outline'}
+                  onClick={() => setApprovalMode('exact')}
+                >
+                  Exact Amount
+                </Button>
+                <Button
+                  type="button"
+                  variant={approvalMode === 'infinite' ? 'default' : 'outline'}
+                  onClick={() => setApprovalMode('infinite')}
+                >
+                  Unlimited
+                </Button>
+              </div>
+            </section>
           </div>
-        </div>
-      </div>
-    </div>
+        </motion.div>
+      </DialogContent>
+    </Dialog>
   )
 }
