@@ -190,9 +190,15 @@ export function useSwapExecution(
       store.setSwapExecutionLoading(true)
       if (!preparedSwap.transaction.call) throw new Error('Missing transaction payload')
 
-      const gas = preparedSwap.transaction.estimatedGas
-        ? BigInt(preparedSwap.transaction.estimatedGas)
-        : undefined
+      // Use server-provided gas estimate, or compute a generous fallback
+      // based on executor call count so wallets don't reject the tx.
+      let gas: bigint | undefined
+      if (preparedSwap.transaction.estimatedGas) {
+        gas = BigInt(preparedSwap.transaction.estimatedGas)
+      } else {
+        const callCount = preparedSwap.transaction.executor?.calls.length ?? 1
+        gas = BigInt(200_000 + callCount * 200_000)
+      }
 
       const sTx = await sendTransactionAsync({
         chainId: selectedChainId,

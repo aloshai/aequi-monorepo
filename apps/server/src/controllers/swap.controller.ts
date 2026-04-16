@@ -200,7 +200,7 @@ export async function handleSwap(deps: AppDeps, request: FastifyRequest, reply: 
       } catch {
         if (simulationPassed) {
           const callCount = transaction.executor?.calls.length ?? 1
-          estimatedGas = BigInt(150_000 + callCount * 180_000)
+          estimatedGas = BigInt(200_000 + callCount * 200_000)
         }
       }
     }
