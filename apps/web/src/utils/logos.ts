@@ -14,6 +14,8 @@ export const TOKEN_LOGOS: Record<string, string> = {
     'WBNB': 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/smartchain/info/logo.png',
     'CAKE': 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/smartchain/assets/0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82/logo.png',
     'BUSD': 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/smartchain/assets/0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56/logo.png',
+    'CENT': '/cent-coin.svg',
+    'WCENT': '/cent-coin.svg',
 }
 
 export const getDexLogo = (dexName: string): string => {
