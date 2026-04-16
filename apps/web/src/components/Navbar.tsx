@@ -1,6 +1,7 @@
 import type { ChainKey } from '../types/api'
+import { useState, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Settings2, Wallet } from 'lucide-react'
+import { Settings2, Wallet, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 
@@ -24,6 +25,69 @@ const CHAIN_OPTIONS: Array<{ key: ChainKey; label: string }> = [
   { key: 'bsc', label: 'BNB Chain' },
   { key: 'incentiv', label: 'Incentiv' },
 ]
+
+const CHAIN_LOGO: Record<ChainKey, string> = {
+  ethereum: 'https://cryptologos.cc/logos/ethereum-eth-logo.svg',
+  bsc: 'https://cryptologos.cc/logos/bnb-bnb-logo.svg',
+  incentiv: '/incentiv.svg',
+}
+
+function ChainIcon({ chain, size = 18 }: { chain: ChainKey; size?: number }) {
+  return (
+    <img
+      src={CHAIN_LOGO[chain]}
+      alt={chain}
+      width={size}
+      height={size}
+      className="rounded-full"
+    />
+  )
+}
+
+function ChainSelector({ selected, onChange }: { selected: ChainKey; onChange: (c: ChainKey) => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const current = CHAIN_OPTIONS.find((o) => o.key === selected)!
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <ChainIcon chain={selected} size={16} />
+        <span className="hidden sm:inline">{current.label}</span>
+        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-1 min-w-[160px] overflow-hidden rounded-md border border-border bg-background p-1 shadow-lg">
+          {CHAIN_OPTIONS.map((o) => (
+            <button
+              key={o.key}
+              type="button"
+              onClick={() => { onChange(o.key); setOpen(false) }}
+              className={`flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm transition-colors hover:bg-accent ${o.key === selected ? 'bg-accent/60 font-medium' : ''}`}
+            >
+              <ChainIcon chain={o.key} size={18} />
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 const shorten = (addr: string) =>
   addr.length > 10 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr
@@ -64,15 +128,7 @@ export function Navbar({
           transition={{ duration: 0.28, delay: 0.05, ease: 'easeOut' }}
           className="navbar-actions"
         >
-          <select
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            value={selectedChain}
-            onChange={(e) => onChainChange(e.target.value as ChainKey)}
-          >
-            {CHAIN_OPTIONS.map((o) => (
-              <option key={o.key} value={o.key}>{o.label}</option>
-            ))}
-          </select>
+          <ChainSelector selected={selectedChain} onChange={onChainChange} />
 
           {!isConnected ? (
             <Button className="h-9" onClick={onConnect} disabled={connectBusy}>
