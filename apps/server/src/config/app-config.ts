@@ -43,6 +43,7 @@ const DEFAULTS = {
     interhopBufferBps: 10,
     quoteTtlSeconds: 15,
     bscAddress: '0x03cbBc27784c64FC4A6f11eFe8D1C3b4Dee204EA' as Address,
+    incentivAddress: '0x583fcE4bd4f73CD046254c3556756dD16114e954' as Address,
   },
   dex: {
     uniswapV2Factory: '0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f' as Address,
@@ -78,7 +79,7 @@ export const appConfig = {
   executor: {
     eth: parseAddressOrNull(process.env.AEQUI_EXECUTOR_ETH),
     bsc: parseAddressOrNull(process.env.AEQUI_EXECUTOR_BSC) ?? DEFAULTS.executor.bscAddress,
-    incentiv: parseAddressOrNull(process.env.AEQUI_EXECUTOR_INCENTIV),
+    incentiv: parseAddressOrNull(process.env.AEQUI_EXECUTOR_INCENTIV) ?? DEFAULTS.executor.incentivAddress,
     interhopBufferBps: parseIntWithDefault(process.env.EXECUTOR_INTERHOP_BUFFER_BPS, DEFAULTS.executor.interhopBufferBps, 0),
   },
   swap: {
