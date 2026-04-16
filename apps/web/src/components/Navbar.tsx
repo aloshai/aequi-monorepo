@@ -27,8 +27,8 @@ const CHAIN_OPTIONS: Array<{ key: ChainKey; label: string }> = [
 ]
 
 const CHAIN_LOGO: Record<ChainKey, string> = {
-  ethereum: 'https://cryptologos.cc/logos/ethereum-eth-logo.svg',
-  bsc: 'https://cryptologos.cc/logos/bnb-bnb-logo.svg',
+  ethereum: '/ethereum.svg',
+  bsc: '/bnb.svg',
   incentiv: '/incentiv.svg',
 }
 
