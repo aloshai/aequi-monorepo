@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 import { useSendTransaction } from 'wagmi'
-import { waitForTransactionReceipt } from 'wagmi/actions'
+import { waitForTransactionReceipt, estimateFeesPerGas } from 'wagmi/actions'
 import { useSwapStore } from '../store/use-swap-store'
 import { useSettingsStore } from '../store/use-settings-store'
 import { useUiStore } from '../store/use-ui-store'
@@ -20,6 +20,22 @@ const CHAIN_ID_BY_KEY: Record<ChainKey, SupportedChainId> = {
   ethereum: CHAIN_BY_KEY.ethereum.id,
   bsc: CHAIN_BY_KEY.bsc.id,
   incentiv: CHAIN_BY_KEY.incentiv.id,
+}
+
+/** Fetch current fee params with a 30% buffer on maxFeePerGas for inclusion safety. */
+async function getFeeParams(chainId: SupportedChainId) {
+  try {
+    const fees = await estimateFeesPerGas(wagmiConfig, { chainId })
+    if (fees.maxFeePerGas && fees.maxPriorityFeePerGas) {
+      return {
+        maxFeePerGas: (fees.maxFeePerGas * 130n) / 100n,
+        maxPriorityFeePerGas: (fees.maxPriorityFeePerGas * 120n) / 100n,
+      }
+    }
+  } catch {
+    // Fall through — let the wallet decide
+  }
+  return {}
 }
 
 export function useSwapExecution(
@@ -173,11 +189,13 @@ export function useSwapExecution(
         const txData = approvalData.transaction?.data
         if (!txTarget || !txData) throw new Error('Approval payload missing')
 
+        const feeParams = await getFeeParams(selectedChainId)
         const aTx = await sendTransactionAsync({
           chainId: selectedChainId,
           to: txTarget as `0x${string}`,
           data: txData as `0x${string}`,
           value: BigInt(approvalData.transaction?.value ?? '0'),
+          ...feeParams,
         })
 
         store.setApprovalHash(aTx)
@@ -200,12 +218,14 @@ export function useSwapExecution(
         gas = BigInt(200_000 + callCount * 200_000)
       }
 
+      const swapFeeParams = await getFeeParams(selectedChainId)
       const sTx = await sendTransactionAsync({
         chainId: selectedChainId,
         to: preparedSwap.transaction.call.to as `0x${string}`,
         data: preparedSwap.transaction.call.data as `0x${string}`,
         value: BigInt(preparedSwap.transaction.call.value ?? '0'),
         gas,
+        ...swapFeeParams,
       })
 
       store.setSwapHash(sTx)
