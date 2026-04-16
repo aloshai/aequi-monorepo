@@ -706,6 +706,108 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.pool-card__fee-badge {
+  font-size: 0.6rem;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(37, 99, 235, 0.08);
+  color: rgba(37, 99, 235, 0.82);
+  letter-spacing: 0.2px;
+}
+
+/* ── Reserve Ratio Bar ── */
+.reserve-bar-container {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.reserve-bar-labels {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.68rem;
+}
+
+.reserve-bar-label {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-muted);
+}
+
+.reserve-bar-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.reserve-bar-dot--left  { background: rgba(59, 130, 246, 0.7); }
+.reserve-bar-dot--right { background: rgba(139, 92, 246, 0.65); }
+
+.reserve-bar-amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.reserve-bar-track {
+  position: relative;
+  height: 6px;
+  width: 100%;
+  border-radius: 3px;
+  background: rgba(139, 92, 246, 0.15);
+  overflow: hidden;
+}
+
+.reserve-bar-fill--left {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.5), rgba(59, 130, 246, 0.35));
+  transition: width 0.3s ease;
+}
+
+.reserve-bar-pcts {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Offers Card Layout ── */
+.offer-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px 8px;
+}
+
+.offer-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.offer-metric__label {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.offer-metric__value {
+  font-size: 0.78rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Loading / Empty States ── */
 .quote-loading {
   display: flex;

@@ -24,12 +24,40 @@ function formatCompact(raw: string): string {
   return `${scaled.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })}${COMPACT_SUFFIXES[tier]}`
 }
 
-function formatTokenAmount(raw: string | undefined, decimals: number): string {
-  if (!raw) return '-'
-  const n = Number(raw) / 10 ** decimals
-  if (!Number.isFinite(n)) return '-'
-  if (n >= 1_000_000) return formatCompact(String(n))
-  return n.toLocaleString(undefined, { maximumFractionDigits: n >= 1 ? 2 : 4 })
+function fmtPrice(v: number): string {
+  if (v >= 1000) return v.toLocaleString(undefined, { maximumFractionDigits: 2 })
+  if (v >= 1) return v.toLocaleString(undefined, { maximumFractionDigits: 4 })
+  if (v >= 0.0001) return v.toFixed(6)
+  return v.toPrecision(4)
+}
+
+function ReserveBar({ symbol0, symbol1, amount0, amount1 }: {
+  symbol0: string; symbol1: string; amount0: number; amount1: number
+}) {
+  const total = amount0 + amount1
+  const pct0 = total > 0 ? Math.max(2, Math.min(98, (amount0 / total) * 100)) : 50
+
+  return (
+    <div className="reserve-bar-container">
+      <div className="reserve-bar-labels">
+        <span className="reserve-bar-label">
+          <span className="reserve-bar-dot reserve-bar-dot--left" />
+          {symbol0} <span className="reserve-bar-amount">{formatCompact(String(amount0))}</span>
+        </span>
+        <span className="reserve-bar-label">
+          <span className="reserve-bar-dot reserve-bar-dot--right" />
+          {symbol1} <span className="reserve-bar-amount">{formatCompact(String(amount1))}</span>
+        </span>
+      </div>
+      <div className="reserve-bar-track">
+        <div className="reserve-bar-fill reserve-bar-fill--left" style={{ width: `${pct0}%` }} />
+      </div>
+      <div className="reserve-bar-pcts">
+        <span>{pct0.toFixed(0)}%</span>
+        <span>{(100 - pct0).toFixed(0)}%</span>
+      </div>
+    </div>
+  )
 }
 
 interface DataTabsProps {
@@ -47,66 +75,95 @@ function OffersTab({ quote, tokenB }: { quote: QuoteResponse; tokenB: RouteToken
   const lowestGas = Math.min(...quote.offers.map((offer) => Number(offer.estimatedGasCostWei ?? Number.MAX_SAFE_INTEGER)))
 
   return (
-    <div className="overflow-x-auto">
-      <table className="offers-table">
-        <thead>
-          <tr>
-            <th>Route</th>
-            <th>Output</th>
-            <th>Impact</th>
-            <th>Gas</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {quote.offers.map((offer, idx) => {
-            const isBest = idx === 0
-            const offerAmount = Number(offer.amountOut) / 10 ** tokenB.decimals
-            const offerImpact = offer.priceImpactBps / 100
-            const offerGas = offer.estimatedGasCostWei
-              ? (Number(offer.estimatedGasCostWei) / 1e18).toFixed(5)
-              : '-'
-            const gasNumber = Number(offer.estimatedGasCostWei ?? Number.MAX_SAFE_INTEGER)
-            const isLowestImpact = offer.priceImpactBps === lowestImpact
-            const isLowestGas = gasNumber === lowestGas
+    <div className="flex flex-col gap-2">
+      {quote.offers.map((offer, idx) => {
+        const isBest = idx === 0
+        const offerAmount = Number(offer.amountOut) / 10 ** tokenB.decimals
+        const offerImpact = offer.priceImpactBps / 100
+        const offerGas = offer.estimatedGasCostWei
+          ? (Number(offer.estimatedGasCostWei) / 1e18).toFixed(5)
+          : '-'
+        const gasNumber = Number(offer.estimatedGasCostWei ?? Number.MAX_SAFE_INTEGER)
+        const isLowestImpact = offer.priceImpactBps === lowestImpact
+        const isLowestGas = gasNumber === lowestGas
+        const impactClass = offerImpact > 5 ? 'text-red-600' : offerImpact > 1 ? 'text-amber-600' : 'text-foreground'
 
-            let reason = ''
-            if (!isBest) {
-              const diff = ((bestAmount - offerAmount) / bestAmount * 100)
-              if (diff > 0.5) reason = `${diff.toFixed(1)}% less`
-              else if (offerImpact > quote.priceImpactBps / 100) reason = 'Higher impact'
-              else reason = 'Higher gas'
-            }
+        let reason = ''
+        if (!isBest) {
+          const diff = ((bestAmount - offerAmount) / bestAmount * 100)
+          if (diff > 0.5) reason = `${diff.toFixed(1)}% less output`
+          else if (offerImpact > quote.priceImpactBps / 100) reason = 'Higher impact'
+          else reason = 'Higher gas'
+        }
 
-            const impactClass = offerImpact > 5 ? 'text-red-600' : offerImpact > 1 ? 'text-amber-600' : 'text-foreground'
-
-            return (
-              <tr key={idx} className={isBest ? 'best-row' : undefined}>
-                <td>
+        return (
+          <Card key={idx} className={`bg-background ${isBest ? 'ring-1 ring-primary/30' : ''}`}>
+            <CardContent className="p-3">
+              {/* Route header */}
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-1">
                   {offer.pools.map((p, i) => (
-                    <Badge key={`${p.poolAddress}-${i}`} variant="secondary" className="mr-1 capitalize">
-                      {p.dexId.split('-')[0]}
+                    <Badge key={`${p.poolAddress}-${i}`} variant="secondary" className="text-[10px] capitalize">
+                      {p.dexId.split('-')[0]}{p.feeTier != null ? ` ${p.feeTier / 10000}%` : ''}
                     </Badge>
                   ))}
-                </td>
-                <td>{offerAmount.toFixed(4)}</td>
-                <td className={impactClass}>{offerImpact.toFixed(2)}%</td>
-                <td className="text-muted-foreground">{offerGas}</td>
-                <td>
-                  <div className="flex flex-wrap justify-end gap-1">
-                    {isBest && <Badge variant="success">Best Output</Badge>}
-                    {isLowestImpact && <Badge variant="warning">Lowest Impact</Badge>}
-                    {isLowestGas && <Badge variant="outline">Lowest Gas</Badge>}
-                    {!isBest && !isLowestImpact && !isLowestGas && (
-                      <span className="reason-text">{reason}</span>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+                </div>
+                <div className="flex items-center gap-1">
+                  {isBest && <Badge variant="success" className="text-[10px]">Best</Badge>}
+                  {isLowestImpact && !isBest && <Badge variant="warning" className="text-[10px]">Low Impact</Badge>}
+                  {isLowestGas && !isBest && <Badge variant="outline" className="text-[10px]">Low Gas</Badge>}
+                  {!isBest && !isLowestImpact && !isLowestGas && (
+                    <span className="reason-text">{reason}</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Metrics row */}
+              <div className="offer-metrics">
+                <div className="offer-metric">
+                  <span className="offer-metric__label">Output</span>
+                  <span className="offer-metric__value">{offerAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span>
+                </div>
+                <div className="offer-metric">
+                  <span className="offer-metric__label">Impact</span>
+                  <span className={`offer-metric__value ${impactClass}`}>{offerImpact.toFixed(2)}%</span>
+                </div>
+                <div className="offer-metric">
+                  <span className="offer-metric__label">Gas</span>
+                  <span className="offer-metric__value text-muted-foreground">{offerGas}</span>
+                </div>
+                <div className="offer-metric">
+                  <span className="offer-metric__label">Hops</span>
+                  <span className="offer-metric__value">{offer.hopVersions.join(' → ')}</span>
+                </div>
+              </div>
+
+              {/* Per-source reserve bars */}
+              {offer.sources.length > 0 && offer.sources.some(s => s.reserves) && (
+                <div className="mt-2 pt-2 border-t border-border/50 flex flex-col gap-1.5">
+                  {offer.sources.map((source, si) => {
+                    const tIn = offer.tokens[si]
+                    const tOut = offer.tokens[si + 1]
+                    if (!tIn || !tOut || !source.reserves) return null
+
+                    const isT0In = source.reserves.token0?.toLowerCase() === tIn.address.toLowerCase()
+                    const t0 = isT0In ? tIn : tOut
+                    const t1 = isT0In ? tOut : tIn
+                    const r0 = source.reserves.reserve0 ? Number(source.reserves.reserve0) / 10 ** t0.decimals : null
+                    const r1 = source.reserves.reserve1 ? Number(source.reserves.reserve1) / 10 ** t1.decimals : null
+
+                    if (r0 == null || r1 == null || !Number.isFinite(r0) || !Number.isFinite(r1)) return null
+
+                    return (
+                      <ReserveBar key={si} symbol0={t0.symbol} symbol1={t1.symbol} amount0={r0} amount1={r1} />
+                    )
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )
+      })}
     </div>
   )
 }
@@ -119,7 +176,6 @@ function PoolsTab({ quote }: { quote: QuoteResponse }) {
         const tokenOut = quote.tokens[idx + 1]
         if (!tokenIn || !tokenOut) return null
 
-        // Resolve which symbol belongs to token0/token1
         const isToken0In = source.reserves?.token0?.toLowerCase() === tokenIn.address.toLowerCase()
         const token0Info = isToken0In ? tokenIn : tokenOut
         const token1Info = isToken0In ? tokenOut : tokenIn
@@ -127,75 +183,64 @@ function PoolsTab({ quote }: { quote: QuoteResponse }) {
         // Compute price ratio from sqrtPriceX96 for V3 pools
         let priceLabel: string | null = null
         if (source.reserves?.sqrtPriceX96) {
-          const sqrtP = BigInt(source.reserves.sqrtPriceX96)
-          // price_token0_in_token1 = (sqrtPriceX96 / 2^96)^2, adjusted for decimals
-          // Use Number for display math (sufficient precision for UI)
-          const sqrtPNum = Number(sqrtP) / 2 ** 96
+          const sqrtPNum = Number(BigInt(source.reserves.sqrtPriceX96)) / 2 ** 96
           const rawPrice = sqrtPNum * sqrtPNum
           const decimalAdj = 10 ** (token0Info.decimals - token1Info.decimals)
-          const priceToken0InToken1 = rawPrice * decimalAdj
-
-          if (priceToken0InToken1 > 0 && Number.isFinite(priceToken0InToken1)) {
-            const fmt = (v: number) => v >= 1000
-              ? v.toLocaleString(undefined, { maximumFractionDigits: 2 })
-              : v >= 1
-                ? v.toLocaleString(undefined, { maximumFractionDigits: 4 })
-                : v.toPrecision(4)
-
-            priceLabel = `1 ${token0Info.symbol} = ${fmt(priceToken0InToken1)} ${token1Info.symbol}`
+          const p = rawPrice * decimalAdj
+          if (p > 0 && Number.isFinite(p)) {
+            priceLabel = `1 ${token0Info.symbol} = ${fmtPrice(p)} ${token1Info.symbol}`
           }
         }
+
+        // Reserve amounts for ratio bar (V3 uses amountIn/Out as proxy, V2 uses reserves)
+        const r0Raw = source.reserves?.reserve0 ? Number(source.reserves.reserve0) / 10 ** token0Info.decimals : null
+        const r1Raw = source.reserves?.reserve1 ? Number(source.reserves.reserve1) / 10 ** token1Info.decimals : null
+        const hasReserves = r0Raw != null && r1Raw != null && Number.isFinite(r0Raw) && Number.isFinite(r1Raw)
 
         return (
           <Card key={`${source.poolAddress ?? source.dexId}-${idx}`} className="bg-background">
             <CardContent className="p-3">
               <div className="pool-card__header">
-                <span className="pool-card__dex">{source.dexId.split('-')[0]}</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="pool-card__dex">{source.dexId.split('-')[0]}</span>
+                  {source.feeTier != null && (
+                    <span className="pool-card__fee-badge">{source.feeTier / 10000}%</span>
+                  )}
+                </div>
                 <span className="pool-card__pair">{tokenIn.symbol}/{tokenOut.symbol}</span>
               </div>
 
               {source.reserves ? (
-                <>
-                  {source.reserves.liquidity ? (
-                    <>
-                      <div className="pool-card__row">
-                        <span className="pool-card__label">Liquidity</span>
-                        <span className="pool-card__value">{formatCompact(source.reserves.liquidity)}</span>
-                      </div>
-                      {priceLabel && (
-                        <div className="pool-card__row">
-                          <span className="pool-card__label">Price</span>
-                          <span className="pool-card__value">{priceLabel}</span>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <div className="pool-card__row">
-                        <span className="pool-card__label">{token0Info.symbol}</span>
-                        <span className="pool-card__value">
-                          {formatTokenAmount(source.reserves.reserve0, token0Info.decimals)}
-                        </span>
-                      </div>
-                      <div className="pool-card__row">
-                        <span className="pool-card__label">{token1Info.symbol}</span>
-                        <span className="pool-card__value">
-                          {formatTokenAmount(source.reserves.reserve1, token1Info.decimals)}
-                        </span>
-                      </div>
-                    </>
-                  )}
-                  {source.feeTier != null && (
+                <div className="flex flex-col gap-1">
+                  {/* Liquidity (V3) */}
+                  {source.reserves.liquidity && (
                     <div className="pool-card__row">
-                      <span className="pool-card__label">Fee</span>
-                      <span className="pool-card__value">{source.feeTier / 10000}%</span>
+                      <span className="pool-card__label">Liquidity</span>
+                      <span className="pool-card__value">{formatCompact(source.reserves.liquidity)}</span>
                     </div>
                   )}
-                </>
+
+                  {/* Price ratio */}
+                  {priceLabel && (
+                    <div className="pool-card__row">
+                      <span className="pool-card__label">Price</span>
+                      <span className="pool-card__value text-xs">{priceLabel}</span>
+                    </div>
+                  )}
+
+                  {/* Reserve ratio bar */}
+                  {hasReserves && (
+                    <ReserveBar
+                      symbol0={token0Info.symbol}
+                      symbol1={token1Info.symbol}
+                      amount0={r0Raw!}
+                      amount1={r1Raw!}
+                    />
+                  )}
+                </div>
               ) : (
                 <div className="pool-card__row">
-                  <span className="pool-card__label italic">Data unavailable</span>
-                  <span className="pool-card__value" />
+                  <span className="pool-card__label italic text-xs">Data unavailable</span>
                 </div>
               )}
             </CardContent>
