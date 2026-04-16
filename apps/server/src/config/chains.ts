@@ -127,7 +127,7 @@ export const CHAIN_CONFIGS: Record<ChainKey, ChainConfig> = {
                 routerAddress: '0x4a66A8bA9704DD06fE52A027f2B16a3F5D11B048',
                 quoterAddress: '0x1d317fFfBc3Bda5aA06F9f8f506e8C6082dC415A',
                 feeTiers: [FeeAmount.LOWEST, FeeAmount.LOW_200, FeeAmount.LOW_300, FeeAmount.LOW_400, FeeAmount.LOW, FeeAmount.MEDIUM, FeeAmount.HIGH],
-                useRouter02: false,
+                useRouter02: true, // Uni-V3 fork uses Router02 (no deadline in struct)
             },
         ],
     },
