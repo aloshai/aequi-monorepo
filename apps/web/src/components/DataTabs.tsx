@@ -12,6 +12,12 @@ const BLOCK_EXPLORER: Record<ChainKey, string> = {
   incentiv: 'https://explorer.incentiv.io',
 }
 
+const NATIVE_SYMBOL: Record<ChainKey, string> = {
+  ethereum: 'ETH',
+  bsc: 'BNB',
+  incentiv: 'CENT',
+}
+
 const COMPACT_SUFFIXES = ['', 'K', 'M', 'B', 'T', 'Q'] as const
 
 function formatCompact(raw: string): string {
@@ -66,6 +72,7 @@ interface DataTabsProps {
 }
 
 function OffersTab({ quote, tokenB }: { quote: QuoteResponse; tokenB: RouteToken }) {
+  const nativeCurrency = NATIVE_SYMBOL[quote.chain] ?? 'ETH'
   if (!quote.offers || quote.offers.length === 0) {
     return <p className="py-2 text-sm text-muted-foreground">No alternative routes yet.</p>
   }
@@ -80,8 +87,10 @@ function OffersTab({ quote, tokenB }: { quote: QuoteResponse; tokenB: RouteToken
         const isBest = idx === 0
         const offerAmount = Number(offer.amountOut) / 10 ** tokenB.decimals
         const offerImpact = offer.priceImpactBps / 100
-        const offerGas = offer.estimatedGasCostWei
-          ? (Number(offer.estimatedGasCostWei) / 1e18).toFixed(5)
+        const gasVal = offer.estimatedGasCostWei ? Number(offer.estimatedGasCostWei) / 1e18 : null
+        const gasGwei = offer.gasPriceWei ? (Number(offer.gasPriceWei) / 1e9).toFixed(1) : null
+        const offerGas = gasVal != null
+          ? `${gasVal.toFixed(5)} ${nativeCurrency}${gasGwei ? ` (${gasGwei} gwei)` : ''}`
           : '-'
         const gasNumber = Number(offer.estimatedGasCostWei ?? Number.MAX_SAFE_INTEGER)
         const isLowestImpact = offer.priceImpactBps === lowestImpact

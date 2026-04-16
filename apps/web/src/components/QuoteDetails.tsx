@@ -13,6 +13,7 @@ interface QuoteDetailsProps {
 const NATIVE_SYMBOL: Record<string, string> = {
   ethereum: 'ETH',
   bsc: 'BNB',
+  incentiv: 'CENT',
 }
 
 function StatRow({ label, value, valueClassName }: { label: string; value: string; valueClassName?: string }) {
