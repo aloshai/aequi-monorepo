@@ -68,6 +68,8 @@ export const appConfig = {
     ethereumFallback: parseUrlList(process.env.RPC_URL_ETH_FALLBACK),
     bsc: parseUrlList(process.env.BSC_RPC_URL),
     bscFallback: parseUrlList(process.env.BSC_RPC_URL_FALLBACK),
+    incentiv: parseUrlList(process.env.INCENTIV_RPC_URL),
+    incentivFallback: parseUrlList(process.env.INCENTIV_RPC_URL_FALLBACK),
   },
   dex: {
     uniswapV2Factory: parseAddressWithFallback(process.env.UNISWAP_V2_FACTORY, DEFAULTS.dex.uniswapV2Factory),
@@ -76,6 +78,7 @@ export const appConfig = {
   executor: {
     eth: parseAddressOrNull(process.env.AEQUI_EXECUTOR_ETH),
     bsc: parseAddressOrNull(process.env.AEQUI_EXECUTOR_BSC) ?? DEFAULTS.executor.bscAddress,
+    incentiv: parseAddressOrNull(process.env.AEQUI_EXECUTOR_INCENTIV),
     interhopBufferBps: parseIntWithDefault(process.env.EXECUTOR_INTERHOP_BUFFER_BPS, DEFAULTS.executor.interhopBufferBps, 0),
   },
   swap: {

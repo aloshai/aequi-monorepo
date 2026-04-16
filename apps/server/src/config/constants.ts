@@ -115,6 +115,43 @@ export const INTERMEDIATE_TOKENS: Record<ChainKey, Array<Omit<TokenMetadata, 'to
       decimals: 18,
     },
   ],
+  incentiv: [
+    {
+      chainId: 24101,
+      address: '0xB0f0A14A50F14dc9e6476d61C00cF0375Dd4EB04',
+      symbol: 'WCENT',
+      name: 'Wrapped CENT',
+      decimals: 18,
+    },
+    {
+      chainId: 24101,
+      address: '0x16e43840d8D79896A389a3De85aB0B0210C05685',
+      symbol: 'USDC',
+      name: 'USD Coin',
+      decimals: 6,
+    },
+    {
+      chainId: 24101,
+      address: '0x39b076b5d23F588690D480af3Bf820edad31a4bB',
+      symbol: 'USDT',
+      name: 'Tether USD',
+      decimals: 6,
+    },
+    {
+      chainId: 24101,
+      address: '0x3e425317dB7BaC8077093117081b40d9b46F29cb',
+      symbol: 'WETH',
+      name: 'Wrapped Ether',
+      decimals: 18,
+    },
+    {
+      chainId: 24101,
+      address: '0xfaC24134dbc4b00Ee11114eCDFE6397f389203E3',
+      symbol: 'SOL',
+      name: 'Solana',
+      decimals: 18,
+    },
+  ],
 }
 
 export const INTERMEDIATE_TOKEN_ADDRESSES: Record<ChainKey, Address[]> = Object.fromEntries(
@@ -127,6 +164,7 @@ export const INTERMEDIATE_TOKEN_ADDRESSES: Record<ChainKey, Address[]> = Object.
 export const AEQUI_EXECUTOR_ADDRESS: Record<ChainKey, Address | null> = {
   ethereum: appConfig.executor.eth,
   bsc: appConfig.executor.bsc,
+  incentiv: appConfig.executor.incentiv,
 }
 
 export const EXECUTOR_INTERHOP_BUFFER_BPS = appConfig.executor.interhopBufferBps

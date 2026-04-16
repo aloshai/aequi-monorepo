@@ -14,11 +14,12 @@ const erc20Abi = [{
   outputs: [{ name: 'balance', type: 'uint256' }],
 }]
 
-type SupportedChainId = typeof CHAIN_BY_KEY.ethereum.id | typeof CHAIN_BY_KEY.bsc.id
+type SupportedChainId = typeof CHAIN_BY_KEY.ethereum.id | typeof CHAIN_BY_KEY.bsc.id | typeof CHAIN_BY_KEY.incentiv.id
 
 const CHAIN_ID_BY_KEY: Record<ChainKey, SupportedChainId> = {
   ethereum: CHAIN_BY_KEY.ethereum.id,
   bsc: CHAIN_BY_KEY.bsc.id,
+  incentiv: CHAIN_BY_KEY.incentiv.id,
 }
 
 export const formatBigIntAmount = (value: bigint, decimals: number, precision = 6): string => {

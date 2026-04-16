@@ -66,7 +66,7 @@ const makeQuote = (overrides: Partial<PriceQuote> = {}): PriceQuote => ({
 
 describe('SwapBuilder', () => {
   const builder = new SwapBuilder({
-    executorByChain: { ethereum: null, bsc: TEST_EXECUTOR },
+    executorByChain: { ethereum: null, bsc: TEST_EXECUTOR, incentiv: null },
     interhopBufferBps: 10,
   })
 
@@ -149,7 +149,7 @@ describe('SwapBuilder', () => {
 
   it('throws when executor is not configured for chain', () => {
     const noExecutorBuilder = new SwapBuilder({
-      executorByChain: { ethereum: null, bsc: null },
+      executorByChain: { ethereum: null, bsc: null, incentiv: null },
       interhopBufferBps: 10,
     })
 

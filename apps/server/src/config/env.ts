@@ -10,6 +10,8 @@ const envSchema = z.object({
   RPC_URL_ETH_FALLBACK: z.string().optional(),
   BSC_RPC_URL: z.string().optional(),
   BSC_RPC_URL_FALLBACK: z.string().optional(),
+  INCENTIV_RPC_URL: z.string().optional(),
+  INCENTIV_RPC_URL_FALLBACK: z.string().optional(),
 
   // Rate limiting
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(120),
@@ -28,6 +30,7 @@ const envSchema = z.object({
   // Executor
   AEQUI_EXECUTOR_ETH: z.string().optional(),
   AEQUI_EXECUTOR_BSC: z.string().optional(),
+  AEQUI_EXECUTOR_INCENTIV: z.string().optional(),
   EXECUTOR_INTERHOP_BUFFER_BPS: z.coerce.number().int().min(0).default(10),
 
   // Swap
@@ -45,10 +48,10 @@ export function validateEnv(): Env {
   try {
     const env = envSchema.parse(process.env);
 
-    const hasAnyRpc = env.RPC_URL_ETH || env.BSC_RPC_URL;
+    const hasAnyRpc = env.RPC_URL_ETH || env.BSC_RPC_URL || env.INCENTIV_RPC_URL;
     if (!hasAnyRpc) {
       throw new Error(
-        'At least one RPC URL must be configured (RPC_URL_ETH or BSC_RPC_URL)'
+        'At least one RPC URL must be configured (RPC_URL_ETH, BSC_RPC_URL, or INCENTIV_RPC_URL)'
       );
     }
 

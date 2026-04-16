@@ -22,6 +22,7 @@ interface NavbarProps {
 const CHAIN_OPTIONS: Array<{ key: ChainKey; label: string }> = [
   { key: 'ethereum', label: 'Ethereum' },
   { key: 'bsc', label: 'BNB Chain' },
+  { key: 'incentiv', label: 'Incentiv' },
 ]
 
 const shorten = (addr: string) =>

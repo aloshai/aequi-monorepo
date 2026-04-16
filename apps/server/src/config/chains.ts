@@ -1,8 +1,21 @@
 import { mainnet, bsc as bscChain } from 'viem/chains'
+import { defineChain } from 'viem'
 import type { ChainConfig, ChainKey } from '../types'
 import { FeeAmount as PancakeFeeAmount } from '@pancakeswap/v3-sdk'
 import { FeeAmount } from '@uniswap/v3-sdk'
 import { appConfig } from './app-config'
+
+const incentivChain = defineChain({
+    id: 24101,
+    name: 'Incentiv',
+    nativeCurrency: { name: 'CENT', symbol: 'CENT', decimals: 18 },
+    rpcUrls: {
+        default: { http: ['https://rpc.incentiv.io'] },
+    },
+    blockExplorers: {
+        default: { name: 'Incentiv Explorer', url: 'https://explorer.incentiv.io' },
+    },
+})
 
 export const CHAIN_CONFIGS: Record<ChainKey, ChainConfig> = {
     ethereum: {
@@ -91,6 +104,30 @@ export const CHAIN_CONFIGS: Record<ChainKey, ChainConfig> = {
                 quoterAddress: '0x78D78E420Da98ad378D7799bE8f4AF69033EB077',
                 feeTiers: [FeeAmount.LOWEST, FeeAmount.LOW_200, FeeAmount.LOW_300, FeeAmount.LOW_400, FeeAmount.LOW, FeeAmount.MEDIUM, FeeAmount.HIGH],
                 useRouter02: true, // Uniswap V3 uses Router02 (no deadline in struct)
+            },
+        ],
+    },
+    incentiv: {
+        key: 'incentiv',
+        id: incentivChain.id,
+        name: 'Incentiv',
+        nativeCurrencySymbol: incentivChain.nativeCurrency.symbol,
+        wrappedNativeAddress: '0xB0f0A14A50F14dc9e6476d61C00cF0375Dd4EB04',
+        rpcUrls: appConfig.rpc.incentiv.length ? appConfig.rpc.incentiv : Array.from(incentivChain.rpcUrls.default.http),
+        fallbackRpcUrls: appConfig.rpc.incentivFallback,
+        disablePublicRpcRegistry: appConfig.rpc.incentiv.length > 0,
+        viemChain: incentivChain,
+        dexes: [
+            {
+                id: 'incentive-portal-v3',
+                label: 'Incentive Portal V3',
+                protocol: 'incentive-portal',
+                version: 'v3',
+                factoryAddress: '0x766A315502B1f9869C0E2A19aEA6D6f55b0ad108',
+                routerAddress: '0x4a66A8bA9704DD06fE52A027f2B16a3F5D11B048',
+                quoterAddress: '0x1d317fFfBc3Bda5aA06F9f8f506e8C6082dC415A',
+                feeTiers: [3000],
+                useRouter02: false,
             },
         ],
     },

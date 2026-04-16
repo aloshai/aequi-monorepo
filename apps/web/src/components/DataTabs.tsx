@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 const BLOCK_EXPLORER: Record<ChainKey, string> = {
   ethereum: 'https://etherscan.io',
   bsc: 'https://bscscan.com',
+  incentiv: 'https://explorer.incentiv.io',
 }
 
 interface DataTabsProps {

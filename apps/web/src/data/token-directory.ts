@@ -78,4 +78,48 @@ export const tokenDirectory: Record<ChainKey, TokenPreset[]> = {
       decimals: 18,
     },
   ],
+  incentiv: [
+    {
+      address: '0xEeeeeEeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+      symbol: 'CENT',
+      label: 'CENT · Native CENT',
+      decimals: 18,
+    },
+    {
+      address: '0xB0f0A14A50F14dc9e6476d61C00cF0375Dd4EB04',
+      symbol: 'WCENT',
+      label: 'WCENT · Wrapped CENT',
+      decimals: 18,
+    },
+    {
+      address: '0x16e43840d8D79896A389a3De85aB0B0210C05685',
+      symbol: 'USDC',
+      label: 'USDC · USD Coin',
+      decimals: 6,
+    },
+    {
+      address: '0x39b076b5d23F588690D480af3Bf820edad31a4bB',
+      symbol: 'USDT',
+      label: 'USDT · Tether USD',
+      decimals: 6,
+    },
+    {
+      address: '0x3e425317dB7BaC8077093117081b40d9b46F29cb',
+      symbol: 'WETH',
+      label: 'WETH · Wrapped Ether',
+      decimals: 18,
+    },
+    {
+      address: '0xfaC24134dbc4b00Ee11114eCDFE6397f389203E3',
+      symbol: 'SOL',
+      label: 'SOL · Solana',
+      decimals: 18,
+    },
+    {
+      address: '0x0292593D416Cb765E0e8FF77b32fA7e465958FEE',
+      symbol: 'WBTC',
+      label: 'WBTC · Wrapped BTC',
+      decimals: 8,
+    },
+  ],
 }

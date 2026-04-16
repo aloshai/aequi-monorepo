@@ -29,21 +29,24 @@ import { PoweredBy } from './components/PoweredBy'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 
-type SupportedChainId = typeof CHAIN_BY_KEY.ethereum.id | typeof CHAIN_BY_KEY.bsc.id
+type SupportedChainId = typeof CHAIN_BY_KEY.ethereum.id | typeof CHAIN_BY_KEY.bsc.id | typeof CHAIN_BY_KEY.incentiv.id
 
 const CHAIN_ID_BY_KEY: Record<ChainKey, SupportedChainId> = {
   ethereum: CHAIN_BY_KEY.ethereum.id,
   bsc: CHAIN_BY_KEY.bsc.id,
+  incentiv: CHAIN_BY_KEY.incentiv.id,
 }
 
 const BLOCK_EXPLORER_BY_CHAIN: Record<ChainKey, string> = {
   ethereum: 'https://etherscan.io',
   bsc: 'https://bscscan.com',
+  incentiv: 'https://explorer.incentiv.io',
 }
 
 const CHAIN_OPTIONS: Array<{ key: ChainKey; label: string }> = [
   { key: 'ethereum', label: 'Ethereum' },
   { key: 'bsc', label: 'BNB Smart Chain' },
+  { key: 'incentiv', label: 'Incentiv' },
 ]
 
 function App() {
@@ -104,7 +107,7 @@ function App() {
   useEffect(() => {
     const presets = tokenDirectory[selectedChain] || []
     const cid = CHAIN_ID_BY_KEY[selectedChain]
-    const symA = selectedChain === 'bsc' ? 'BNB' : 'ETH'
+    const symA = selectedChain === 'bsc' ? 'BNB' : selectedChain === 'incentiv' ? 'CENT' : 'ETH'
     const symB = selectedChain === 'bsc' ? 'USDT' : 'USDC'
     const pA = presets.find(p => p.symbol === symA)
     const pB = presets.find(p => p.symbol === symB)

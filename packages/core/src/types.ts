@@ -1,6 +1,6 @@
 import type { Address, Chain } from 'viem'
 
-export type ChainKey = 'ethereum' | 'bsc'
+export type ChainKey = 'ethereum' | 'bsc' | 'incentiv'
 
 export type RouteHopVersion = 'v2' | 'v3'
 export type RoutePreference = 'auto' | RouteHopVersion
@@ -8,7 +8,7 @@ export type RoutePreference = 'auto' | RouteHopVersion
 export interface DexConfig {
   id: string
   label: string
-  protocol: 'uniswap' | 'pancakeswap'
+  protocol: 'uniswap' | 'pancakeswap' | 'incentive-portal'
   version: 'v2' | 'v3'
   factoryAddress: Address
   routerAddress: Address
