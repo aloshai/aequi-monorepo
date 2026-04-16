@@ -12,6 +12,26 @@ const BLOCK_EXPLORER: Record<ChainKey, string> = {
   incentiv: 'https://explorer.incentiv.io',
 }
 
+const COMPACT_SUFFIXES = ['', 'K', 'M', 'B', 'T', 'Q'] as const
+
+function formatCompact(raw: string): string {
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n === 0) return '0'
+  const abs = Math.abs(n)
+  const tier = Math.min(Math.floor(Math.log10(abs) / 3), COMPACT_SUFFIXES.length - 1)
+  if (tier <= 0) return n.toLocaleString(undefined, { maximumFractionDigits: 2 })
+  const scaled = n / 10 ** (tier * 3)
+  return `${scaled.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })}${COMPACT_SUFFIXES[tier]}`
+}
+
+function formatTokenAmount(raw: string | undefined, decimals: number): string {
+  if (!raw) return '-'
+  const n = Number(raw) / 10 ** decimals
+  if (!Number.isFinite(n)) return '-'
+  if (n >= 1_000_000) return formatCompact(String(n))
+  return n.toLocaleString(undefined, { maximumFractionDigits: n >= 1 ? 2 : 4 })
+}
+
 interface DataTabsProps {
   quote: QuoteResponse
   tokenB: RouteToken
@@ -99,6 +119,33 @@ function PoolsTab({ quote }: { quote: QuoteResponse }) {
         const tokenOut = quote.tokens[idx + 1]
         if (!tokenIn || !tokenOut) return null
 
+        // Resolve which symbol belongs to token0/token1
+        const isToken0In = source.reserves?.token0?.toLowerCase() === tokenIn.address.toLowerCase()
+        const token0Info = isToken0In ? tokenIn : tokenOut
+        const token1Info = isToken0In ? tokenOut : tokenIn
+
+        // Compute price ratio from sqrtPriceX96 for V3 pools
+        let priceLabel: string | null = null
+        if (source.reserves?.sqrtPriceX96) {
+          const sqrtP = BigInt(source.reserves.sqrtPriceX96)
+          // price_token0_in_token1 = (sqrtPriceX96 / 2^96)^2, adjusted for decimals
+          // Use Number for display math (sufficient precision for UI)
+          const sqrtPNum = Number(sqrtP) / 2 ** 96
+          const rawPrice = sqrtPNum * sqrtPNum
+          const decimalAdj = 10 ** (token0Info.decimals - token1Info.decimals)
+          const priceToken0InToken1 = rawPrice * decimalAdj
+
+          if (priceToken0InToken1 > 0 && Number.isFinite(priceToken0InToken1)) {
+            const fmt = (v: number) => v >= 1000
+              ? v.toLocaleString(undefined, { maximumFractionDigits: 2 })
+              : v >= 1
+                ? v.toLocaleString(undefined, { maximumFractionDigits: 4 })
+                : v.toPrecision(4)
+
+            priceLabel = `1 ${token0Info.symbol} = ${fmt(priceToken0InToken1)} ${token1Info.symbol}`
+          }
+        }
+
         return (
           <Card key={`${source.poolAddress ?? source.dexId}-${idx}`} className="bg-background">
             <CardContent className="p-3">
@@ -110,26 +157,30 @@ function PoolsTab({ quote }: { quote: QuoteResponse }) {
               {source.reserves ? (
                 <>
                   {source.reserves.liquidity ? (
-                    <div className="pool-card__row">
-                      <span className="pool-card__label">Liquidity (L)</span>
-                      <span className="pool-card__value">{Number(source.reserves.liquidity).toExponential(2)}</span>
-                    </div>
+                    <>
+                      <div className="pool-card__row">
+                        <span className="pool-card__label">Liquidity</span>
+                        <span className="pool-card__value">{formatCompact(source.reserves.liquidity)}</span>
+                      </div>
+                      {priceLabel && (
+                        <div className="pool-card__row">
+                          <span className="pool-card__label">Price</span>
+                          <span className="pool-card__value">{priceLabel}</span>
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <>
                       <div className="pool-card__row">
-                        <span className="pool-card__label">
-                          {source.reserves.token0?.toLowerCase() === tokenIn.address.toLowerCase() ? tokenIn.symbol : tokenOut.symbol}
-                        </span>
+                        <span className="pool-card__label">{token0Info.symbol}</span>
                         <span className="pool-card__value">
-                          {(Number(source.reserves.reserve0) / 10 ** (source.reserves.token0?.toLowerCase() === tokenIn.address.toLowerCase() ? tokenIn.decimals : tokenOut.decimals)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          {formatTokenAmount(source.reserves.reserve0, token0Info.decimals)}
                         </span>
                       </div>
                       <div className="pool-card__row">
-                        <span className="pool-card__label">
-                          {source.reserves.token1?.toLowerCase() === tokenIn.address.toLowerCase() ? tokenIn.symbol : tokenOut.symbol}
-                        </span>
+                        <span className="pool-card__label">{token1Info.symbol}</span>
                         <span className="pool-card__value">
-                          {(Number(source.reserves.reserve1) / 10 ** (source.reserves.token1?.toLowerCase() === tokenIn.address.toLowerCase() ? tokenIn.decimals : tokenOut.decimals)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          {formatTokenAmount(source.reserves.reserve1, token1Info.decimals)}
                         </span>
                       </div>
                     </>
