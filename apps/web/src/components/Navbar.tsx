@@ -54,7 +54,7 @@ export function Navbar({
           <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-primary/12 text-sm font-bold text-primary">
             A
           </span>
-          <span className="navbar-brand text-base font-semibold tracking-tight">Aequi Exchange</span>
+          <span className="navbar-brand text-base font-semibold tracking-tight">Aequi Protocol</span>
           <Badge variant="outline" className="hidden sm:inline-flex">Beta</Badge>
         </motion.div>
 
