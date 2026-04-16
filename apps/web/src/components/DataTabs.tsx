@@ -149,10 +149,22 @@ function OffersTab({ quote, tokenB }: { quote: QuoteResponse; tokenB: RouteToken
                     const isT0In = source.reserves.token0?.toLowerCase() === tIn.address.toLowerCase()
                     const t0 = isT0In ? tIn : tOut
                     const t1 = isT0In ? tOut : tIn
-                    const r0 = source.reserves.reserve0 ? Number(source.reserves.reserve0) / 10 ** t0.decimals : null
-                    const r1 = source.reserves.reserve1 ? Number(source.reserves.reserve1) / 10 ** t1.decimals : null
 
-                    if (r0 == null || r1 == null || !Number.isFinite(r0) || !Number.isFinite(r1)) return null
+                    let r0: number | null = null
+                    let r1: number | null = null
+                    if (source.reserves.reserve0 && source.reserves.reserve1) {
+                      r0 = Number(source.reserves.reserve0) / 10 ** t0.decimals
+                      r1 = Number(source.reserves.reserve1) / 10 ** t1.decimals
+                    } else if (source.reserves.liquidity && source.reserves.sqrtPriceX96) {
+                      const L = Number(BigInt(source.reserves.liquidity))
+                      const sqrtP = Number(BigInt(source.reserves.sqrtPriceX96)) / 2 ** 96
+                      if (sqrtP > 0) {
+                        r0 = (L / sqrtP) / 10 ** t0.decimals
+                        r1 = (L * sqrtP) / 10 ** t1.decimals
+                      }
+                    }
+
+                    if (r0 == null || r1 == null || r0 <= 0 || r1 <= 0 || !Number.isFinite(r0) || !Number.isFinite(r1)) return null
 
                     return (
                       <ReserveBar key={si} symbol0={t0.symbol} symbol1={t1.symbol} amount0={r0} amount1={r1} />
@@ -192,10 +204,24 @@ function PoolsTab({ quote }: { quote: QuoteResponse }) {
           }
         }
 
-        // Reserve amounts for ratio bar (V3 uses amountIn/Out as proxy, V2 uses reserves)
-        const r0Raw = source.reserves?.reserve0 ? Number(source.reserves.reserve0) / 10 ** token0Info.decimals : null
-        const r1Raw = source.reserves?.reserve1 ? Number(source.reserves.reserve1) / 10 ** token1Info.decimals : null
-        const hasReserves = r0Raw != null && r1Raw != null && Number.isFinite(r0Raw) && Number.isFinite(r1Raw)
+        // Reserve amounts for ratio bar
+        // V2: use reserve0/reserve1 directly
+        // V3: compute virtual reserves from liquidity + sqrtPriceX96
+        let r0Raw: number | null = null
+        let r1Raw: number | null = null
+
+        if (source.reserves?.reserve0 && source.reserves?.reserve1) {
+          r0Raw = Number(source.reserves.reserve0) / 10 ** token0Info.decimals
+          r1Raw = Number(source.reserves.reserve1) / 10 ** token1Info.decimals
+        } else if (source.reserves?.liquidity && source.reserves?.sqrtPriceX96) {
+          const L = Number(BigInt(source.reserves.liquidity))
+          const sqrtP = Number(BigInt(source.reserves.sqrtPriceX96)) / 2 ** 96
+          if (sqrtP > 0) {
+            r0Raw = (L / sqrtP) / 10 ** token0Info.decimals
+            r1Raw = (L * sqrtP) / 10 ** token1Info.decimals
+          }
+        }
+        const hasReserves = r0Raw != null && r1Raw != null && r0Raw > 0 && r1Raw > 0 && Number.isFinite(r0Raw) && Number.isFinite(r1Raw)
 
         return (
           <Card key={`${source.poolAddress ?? source.dexId}-${idx}`} className="bg-background">
