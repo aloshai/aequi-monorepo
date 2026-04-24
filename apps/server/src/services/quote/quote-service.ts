@@ -12,6 +12,10 @@ interface Logger {
   debug(obj: object, msg: string): void
 }
 
+interface FeeConfig {
+  bps: number
+}
+
 const noop: Logger = { info() {}, debug() {} }
 
 export function computeRecommendedSlippage(quote: import('@aequi/core').PriceQuote): number {
@@ -23,11 +27,16 @@ export function computeRecommendedSlippage(quote: import('@aequi/core').PriceQuo
 }
 
 export class QuoteService {
+  private readonly feeBps: number
+
   constructor(
     private readonly tokenService: TokenService,
     private readonly priceService: PriceService,
     private readonly logger: Logger = noop,
-  ) {}
+    feeConfig?: FeeConfig,
+  ) {
+    this.feeBps = feeConfig?.bps ?? 0
+  }
 
   async getQuote(
     chain: ChainConfig,
@@ -61,9 +70,14 @@ export class QuoteService {
     }
     this.logger.info({ amountOut: quote.amountOut.toString() }, 'Quote received')
 
+    const feeAmount = this.feeBps > 0
+      ? (quote.amountOut * BigInt(this.feeBps)) / 10000n
+      : 0n
+    const amountOutAfterFee = quote.amountOut - feeAmount
+
     const boundedSlippage = clampSlippage(slippageBps)
-    const slippageAmount = (quote.amountOut * BigInt(boundedSlippage)) / 10000n
-    const amountOutMin = quote.amountOut > slippageAmount ? quote.amountOut - slippageAmount : 0n
+    const slippageAmount = (amountOutAfterFee * BigInt(boundedSlippage)) / 10000n
+    const amountOutMin = amountOutAfterFee > slippageAmount ? amountOutAfterFee - slippageAmount : 0n
 
     return {
       quote,
@@ -71,6 +85,8 @@ export class QuoteService {
       slippageBps: boundedSlippage,
       tokenIn,
       tokenOut,
+      feeBps: this.feeBps,
+      feeAmount,
     }
   }
 }

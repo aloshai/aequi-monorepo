@@ -93,4 +93,6 @@ export interface QuoteResult {
   estimatedGas?: bigint
   quoteId?: string
   expiresAt?: number
+  feeBps?: number
+  feeAmount?: bigint
 }
