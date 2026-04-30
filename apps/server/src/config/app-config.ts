@@ -43,7 +43,7 @@ const DEFAULTS = {
     interhopBufferBps: 10,
     quoteTtlSeconds: 15,
     bscAddress: '0x03cbBc27784c64FC4A6f11eFe8D1C3b4Dee204EA' as Address,
-    incentivAddress: '0x88Fa7f8426C49d236946E255DC4F8cDe8e81A00E' as Address,
+    incentivAddress: '0xa55A29144b96407ed9BA24F6B7986f113056DeB1' as Address,
   },
   dex: {
     uniswapV2Factory: '0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f' as Address,
