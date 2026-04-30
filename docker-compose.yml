@@ -14,6 +14,7 @@ services:
     restart: unless-stopped
     networks:
       - dokploy-network
+      - outbound
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.aequi-api.rule=Host(`${API_DOMAIN:-api.yourdomain.com}`)"
@@ -52,3 +53,5 @@ services:
 networks:
   dokploy-network:
     external: true
+  outbound:
+    driver: bridge
