@@ -103,21 +103,37 @@ export class HealthService {
     const result = await this.check();
 
     const diagnostics: Record<string, string> = {};
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      const resp = await fetch('https://rpc.incentiv.io', {
+    const testFetch = async (label: string, url: string, opts?: RequestInit) => {
+      try {
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), 5000);
+        const resp = await fetch(url, { ...opts, signal: controller.signal });
+        clearTimeout(t);
+        const body = await resp.text();
+        diagnostics[label] = `${resp.status}: ${body.slice(0, 100)}`;
+      } catch (err) {
+        diagnostics[label] = err instanceof Error ? `${err.name}: ${err.message}` : 'unknown';
+      }
+    };
+
+    await Promise.all([
+      testFetch('rpcIncentiv', 'https://rpc.incentiv.io', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      const body = await resp.text();
-      diagnostics.rawFetch = `${resp.status}: ${body.slice(0, 200)}`;
-    } catch (err) {
-      diagnostics.rawFetch = err instanceof Error ? `${err.name}: ${err.message}` : 'unknown';
-    }
+      }),
+      testFetch('rpcByIp', 'https://104.26.10.229', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Host: 'rpc.incentiv.io' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] }),
+      }),
+      testFetch('google', 'https://www.google.com'),
+      testFetch('ethRpc', 'https://eth.llamarpc.com', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] }),
+      }),
+    ]);
 
     reply.status(result.status === 'error' ? 503 : 200).send({ ...result, diagnostics });
   }
