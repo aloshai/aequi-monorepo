@@ -1,6 +1,8 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { getChainConfig, SUPPORTED_CHAINS } from '../../config/chains';
+import { CHAIN_CONFIGS, SUPPORTED_CHAINS } from '../../config/chains';
+import { appConfig } from '../../config/app-config';
 import type { ChainConfig } from '../../types';
+import { getPublicClient } from '../../utils/clients';
 
 export interface HealthCheckResult {
   status: 'ok' | 'degraded' | 'error';
@@ -15,6 +17,12 @@ export interface HealthCheckResult {
       latencyMs?: number;
     };
   };
+}
+
+const RPC_CONFIGURED: Record<string, boolean> = {
+  ethereum: appConfig.rpc.ethereum.length > 0,
+  bsc: appConfig.rpc.bsc.length > 0,
+  incentiv: appConfig.rpc.incentiv.length > 0,
 }
 
 export class HealthService {
@@ -32,55 +40,45 @@ export class HealthService {
 
     const chainStatuses: HealthCheckResult['chains'] = {};
 
-    // Check each supported chain
-    for (const chainKey of SUPPORTED_CHAINS) {
+    const checks = SUPPORTED_CHAINS.map(async (chainKey) => {
+      const chain = CHAIN_CONFIGS[chainKey];
+      if (!chain || !RPC_CONFIGURED[chainKey]) {
+        chainStatuses[chainKey] = { configured: false, rpcAvailable: false };
+        return;
+      }
+
       try {
-        const chain = getChainConfig(chainKey);
-        if (!chain) {
-          chainStatuses[chainKey] = {
-            configured: false,
-            rpcAvailable: false,
-          };
-          continue;
-        }
-        const rpcCheck = await this.checkChainRpc(chain);
-        
+        const result = await Promise.race([
+          this.checkChainRpc(chain),
+          new Promise<{ available: boolean; blockNumber?: string; latencyMs?: number }>((resolve) =>
+            setTimeout(() => resolve({ available: false, latencyMs: 5000 }), 5000)
+          ),
+        ]);
         chainStatuses[chainKey] = {
           configured: true,
-          rpcAvailable: rpcCheck.available,
-          blockNumber: rpcCheck.blockNumber,
-          latencyMs: rpcCheck.latencyMs,
+          rpcAvailable: result.available,
+          blockNumber: result.blockNumber,
+          latencyMs: result.latencyMs,
         };
-      } catch (error) {
-        chainStatuses[chainKey] = {
-          configured: false,
-          rpcAvailable: false,
-        };
+      } catch {
+        chainStatuses[chainKey] = { configured: true, rpcAvailable: false };
       }
-    }
+    });
 
-    // Determine overall status
-    const allRpcsAvailable = Object.values(chainStatuses).every(
-      (status) => status.rpcAvailable
-    );
-    const someRpcsAvailable = Object.values(chainStatuses).some(
-      (status) => status.rpcAvailable
-    );
+    await Promise.all(checks);
+
+    const configured = Object.values(chainStatuses).filter((s) => s.configured);
+    const allAvailable = configured.length > 0 && configured.every((s) => s.rpcAvailable);
+    const someAvailable = configured.some((s) => s.rpcAvailable);
 
     let status: HealthCheckResult['status'] = 'ok';
-    if (!someRpcsAvailable) {
+    if (!someAvailable) {
       status = 'error';
-    } else if (!allRpcsAvailable) {
+    } else if (!allAvailable) {
       status = 'degraded';
     }
 
-    return {
-      status,
-      timestamp,
-      uptime,
-      version: this.version,
-      chains: chainStatuses,
-    };
+    return { status, timestamp, uptime, version: this.version, chains: chainStatuses };
   }
 
   private async checkChainRpc(chain: ChainConfig): Promise<{
@@ -89,64 +87,26 @@ export class HealthService {
     latencyMs?: number;
   }> {
     const startTime = Date.now();
-
     try {
-      // Simple check - try to import client provider
-      const { DefaultChainClientProvider } = await import(
-        '../clients/default-chain-client-provider'
-      );
-      const provider = new DefaultChainClientProvider();
-      const client = await provider.getClient(chain);
-      
+      const client = await getPublicClient(chain);
       const blockNumber = await client.getBlockNumber();
-      const latencyMs = Date.now() - startTime;
-
-      return {
-        available: true,
-        blockNumber: blockNumber.toString(),
-        latencyMs,
-      };
-    } catch (error) {
-      return {
-        available: false,
-        latencyMs: Date.now() - startTime,
-      };
+      return { available: true, blockNumber: blockNumber.toString(), latencyMs: Date.now() - startTime };
+    } catch {
+      return { available: false, latencyMs: Date.now() - startTime };
     }
   }
 
-  async handleHealthCheck(
-    request: FastifyRequest,
-    reply: FastifyReply
-  ): Promise<void> {
+  async handleHealthCheck(request: FastifyRequest, reply: FastifyReply): Promise<void> {
     const result = await this.check();
-
-    // Set appropriate status code
-    if (result.status === 'error') {
-      reply.status(503);
-    } else if (result.status === 'degraded') {
-      reply.status(200); // Still return 200 for degraded but clients can check status field
-    } else {
-      reply.status(200);
-    }
-
-    reply.send(result);
+    reply.status(result.status === 'error' ? 503 : 200).send(result);
   }
 
-  async handleLivenessCheck(
-    request: FastifyRequest,
-    reply: FastifyReply
-  ): Promise<void> {
-    // Liveness just checks if the server is running
+  async handleLivenessCheck(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
     reply.status(200).send({ status: 'ok' });
   }
 
-  async handleReadinessCheck(
-    request: FastifyRequest,
-    reply: FastifyReply
-  ): Promise<void> {
-    // Readiness checks if we can serve traffic
+  async handleReadinessCheck(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
     const result = await this.check();
-
     if (result.status === 'error') {
       reply.status(503).send({ status: 'not_ready', reason: 'No RPC endpoints available' });
     } else {
