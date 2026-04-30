@@ -8,6 +8,9 @@ services:
       - "3000"
     env_file:
       - .env
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     restart: unless-stopped
     networks:
       - dokploy-network
