@@ -15,6 +15,16 @@ contract AequiExecutor is Ownable2Step, Pausable, ReentrancyGuard {
     error ExecutionFailed(uint256 index, address target, bytes reason);
     error InvalidInjectionOffset(uint256 offset, uint256 length);
     error ZeroAmountInjection();
+    error FeeExceedsMax(uint256 feeBps, uint256 maxFeeBps);
+    error FeeRecipientRequired();
+
+    event FeeConfigUpdated(address indexed feeRecipient, uint256 feeBps);
+    event FeeCollected(address indexed token, address indexed recipient, uint256 amount);
+
+    uint256 public constant MAX_FEE_BPS = 500;
+
+    address public feeRecipient;
+    uint256 public feeBps;
 
     struct TokenPull {
         address token;
@@ -36,7 +46,11 @@ contract AequiExecutor is Ownable2Step, Pausable, ReentrancyGuard {
         uint256 injectOffset; // The byte offset in 'data' to overwrite with the balance
     }
 
-    constructor(address initialOwner) Ownable(initialOwner) {}
+    constructor(address initialOwner, address _feeRecipient, uint256 _feeBps) Ownable(initialOwner) {
+        if (_feeBps > MAX_FEE_BPS) revert FeeExceedsMax(_feeBps, MAX_FEE_BPS);
+        feeRecipient = _feeRecipient;
+        feeBps = _feeBps;
+    }
 
     receive() external payable {}
 
@@ -54,6 +68,14 @@ contract AequiExecutor is Ownable2Step, Pausable, ReentrancyGuard {
 
     function rescueETH(address payable to, uint256 amount) external onlyOwner {
         Address.sendValue(to, amount);
+    }
+
+    function setFeeConfig(address _feeRecipient, uint256 _feeBps) external onlyOwner {
+        if (_feeBps > MAX_FEE_BPS) revert FeeExceedsMax(_feeBps, MAX_FEE_BPS);
+        if (_feeBps > 0 && _feeRecipient == address(0)) revert FeeRecipientRequired();
+        feeRecipient = _feeRecipient;
+        feeBps = _feeBps;
+        emit FeeConfigUpdated(_feeRecipient, _feeBps);
     }
 
     function execute(
@@ -149,17 +171,39 @@ contract AequiExecutor is Ownable2Step, Pausable, ReentrancyGuard {
         uint256[] memory balancesBefore,
         uint256 ethBalanceBefore
     ) private {
+        uint256 _feeBps = feeBps;
+        address _feeRecipient = feeRecipient;
+        bool chargeFee = _feeBps > 0 && _feeRecipient != address(0);
+
         for (uint256 i; i < tokens.length;) {
             uint256 balanceAfter = IERC20(tokens[i]).balanceOf(address(this));
             if (balanceAfter > balancesBefore[i]) {
-                IERC20(tokens[i]).safeTransfer(recipient, balanceAfter - balancesBefore[i]);
+                uint256 delta = balanceAfter - balancesBefore[i];
+                if (chargeFee) {
+                    uint256 fee = (delta * _feeBps) / 10000;
+                    if (fee > 0) {
+                        IERC20(tokens[i]).safeTransfer(_feeRecipient, fee);
+                        emit FeeCollected(tokens[i], _feeRecipient, fee);
+                        delta -= fee;
+                    }
+                }
+                IERC20(tokens[i]).safeTransfer(recipient, delta);
             }
             unchecked { ++i; }
         }
 
         uint256 ethBalanceAfter = address(this).balance;
         if (ethBalanceAfter > ethBalanceBefore) {
-            Address.sendValue(payable(recipient), ethBalanceAfter - ethBalanceBefore);
+            uint256 ethDelta = ethBalanceAfter - ethBalanceBefore;
+            if (chargeFee) {
+                uint256 ethFee = (ethDelta * _feeBps) / 10000;
+                if (ethFee > 0) {
+                    Address.sendValue(payable(_feeRecipient), ethFee);
+                    emit FeeCollected(address(0), _feeRecipient, ethFee);
+                    ethDelta -= ethFee;
+                }
+            }
+            Address.sendValue(payable(recipient), ethDelta);
         }
     }
 }

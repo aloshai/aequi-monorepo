@@ -93,6 +93,9 @@ export const appConfig = {
     splitMaxIterations: parseIntWithDefault(process.env.SPLIT_MAX_ITERATIONS, 100, 5),
     splitMinLegRatioBps: parseIntWithDefault(process.env.SPLIT_MIN_LEG_RATIO_BPS, 50, 10),
   },
+  fee: {
+    bps: parseIntWithDefault(process.env.FEE_BPS, 30, 0),
+  },
 } as const
 
 export type AppConfig = typeof appConfig

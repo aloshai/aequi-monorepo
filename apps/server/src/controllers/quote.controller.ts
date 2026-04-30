@@ -71,14 +71,19 @@ export async function handleGetQuote(deps: AppDeps, request: FastifyRequest, rep
   const recommended = computeRecommendedSlippage(quote)
   const effectiveSlippage = isAutoSlippage ? recommended : result.slippageBps
 
-  const slippageAmount = (quote.amountOut * BigInt(effectiveSlippage)) / 10000n
-  const effectiveAmountOutMin = quote.amountOut > slippageAmount ? quote.amountOut - slippageAmount : 0n
+  const feeAmount = result.feeAmount ?? 0n
+  const amountOutAfterFee = quote.amountOut - feeAmount
+  const slippageAmount = (amountOutAfterFee * BigInt(effectiveSlippage)) / 10000n
+  const effectiveAmountOutMin = amountOutAfterFee > slippageAmount ? amountOutAfterFee - slippageAmount : 0n
 
   const storedResult: QuoteResult = { ...result, amountOutMin: effectiveAmountOutMin, slippageBps: effectiveSlippage }
   const { quoteId, expiresAt } = deps.quoteStore.store(storedResult)
 
   const baseResponse = formatPriceQuote(chain, quote, routePreference)
   const amountOutMinFormatted = formatAmountFromUnits(effectiveAmountOutMin, tokenOut.decimals)
+
+  const feeBps = result.feeBps ?? 0
+  const feeAmountFormatted = feeAmount > 0n ? formatAmountFromUnits(feeAmount, tokenOut.decimals) : '0'
 
   return {
     ...baseResponse,
@@ -88,5 +93,8 @@ export async function handleGetQuote(deps: AppDeps, request: FastifyRequest, rep
     amountOutMinFormatted,
     slippageBps: effectiveSlippage,
     recommendedSlippageBps: recommended,
+    feeBps,
+    feeAmount: feeAmount.toString(),
+    feeAmountFormatted,
   }
 }

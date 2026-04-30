@@ -120,6 +120,12 @@ export function QuoteDetails({ quote, tokenA, tokenB }: QuoteDetailsProps) {
           {gasCost && (
             <StatRow label="Gas" value={`${gasCost} ${nativeCurrency}${gasGwei ? ` (${gasGwei} gwei)` : ''}`} />
           )}
+          {quote.feeBps != null && quote.feeBps > 0 && (
+            <StatRow
+              label="Protocol Fee"
+              value={`${quote.feeAmountFormatted ?? '0'} ${tokenB.symbol} (${(quote.feeBps / 100).toFixed(2)}%)`}
+            />
+          )}
           <StatRow
             label="Route"
             value={quote.isSplit ? `Split (${quote.splits?.length ?? 0} legs)` : `${quote.tokens.length - 1} hop${quote.tokens.length > 2 ? 's' : ''}`}

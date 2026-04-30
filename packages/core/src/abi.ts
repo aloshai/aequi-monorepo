@@ -178,6 +178,54 @@ export const AEQUI_EXECUTOR_ABI = [
     ],
     outputs: [{ name: 'results', type: 'bytes[]' }],
   },
+  {
+    type: 'function',
+    name: 'feeRecipient',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'address' }],
+  },
+  {
+    type: 'function',
+    name: 'feeBps',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'MAX_FEE_BPS',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'setFeeConfig',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: '_feeRecipient', type: 'address' },
+      { name: '_feeBps', type: 'uint256' },
+    ],
+    outputs: [],
+  },
+  {
+    type: 'event',
+    name: 'FeeConfigUpdated',
+    inputs: [
+      { name: 'feeRecipient', type: 'address', indexed: true },
+      { name: 'feeBps', type: 'uint256', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'FeeCollected',
+    inputs: [
+      { name: 'token', type: 'address', indexed: true },
+      { name: 'recipient', type: 'address', indexed: true },
+      { name: 'amount', type: 'uint256', indexed: false },
+    ],
+  },
 ] as const satisfies Abi
 
 export const WETH_ABI = [

@@ -55,7 +55,7 @@ export function createDeps(): AppDeps {
       minLegRatioBps: appConfig.routing.splitMinLegRatioBps,
     } : null,
   )
-  const quoteService = new QuoteService(tokenService, priceService)
+  const quoteService = new QuoteService(tokenService, priceService, undefined, appConfig.fee)
   const quoteCache = new TtlCache<QuoteResult>(5_000)
   const quoteStore = new QuoteStore(SWAP_QUOTE_TTL_SECONDS * 1000)
   const allowanceService = new AllowanceService(tokenService, chainClientProvider)
