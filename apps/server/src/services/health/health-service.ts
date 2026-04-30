@@ -15,6 +15,7 @@ export interface HealthCheckResult {
       rpcAvailable: boolean;
       blockNumber?: string;
       latencyMs?: number;
+      error?: string;
     };
   };
 }
@@ -50,8 +51,8 @@ export class HealthService {
       try {
         const result = await Promise.race([
           this.checkChainRpc(chain),
-          new Promise<{ available: boolean; blockNumber?: string; latencyMs?: number }>((resolve) =>
-            setTimeout(() => resolve({ available: false, latencyMs: 5000 }), 5000)
+          new Promise<{ available: boolean; blockNumber?: string; latencyMs?: number; error?: string }>((resolve) =>
+            setTimeout(() => resolve({ available: false, latencyMs: 5000, error: 'timeout' }), 5000)
           ),
         ]);
         chainStatuses[chainKey] = {
@@ -59,9 +60,10 @@ export class HealthService {
           rpcAvailable: result.available,
           blockNumber: result.blockNumber,
           latencyMs: result.latencyMs,
+          error: result.error,
         };
-      } catch {
-        chainStatuses[chainKey] = { configured: true, rpcAvailable: false };
+      } catch (err) {
+        chainStatuses[chainKey] = { configured: true, rpcAvailable: false, error: err instanceof Error ? err.message : 'unknown' };
       }
     });
 
@@ -85,20 +87,39 @@ export class HealthService {
     available: boolean;
     blockNumber?: string;
     latencyMs?: number;
+    error?: string;
   }> {
     const startTime = Date.now();
     try {
       const client = await getPublicClient(chain);
       const blockNumber = await client.getBlockNumber();
       return { available: true, blockNumber: blockNumber.toString(), latencyMs: Date.now() - startTime };
-    } catch {
-      return { available: false, latencyMs: Date.now() - startTime };
+    } catch (err) {
+      return { available: false, latencyMs: Date.now() - startTime, error: err instanceof Error ? err.message : 'unknown' };
     }
   }
 
   async handleHealthCheck(request: FastifyRequest, reply: FastifyReply): Promise<void> {
     const result = await this.check();
-    reply.status(result.status === 'error' ? 503 : 200).send(result);
+
+    const diagnostics: Record<string, string> = {};
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      const resp = await fetch('https://rpc.incentiv.io', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      const body = await resp.text();
+      diagnostics.rawFetch = `${resp.status}: ${body.slice(0, 200)}`;
+    } catch (err) {
+      diagnostics.rawFetch = err instanceof Error ? `${err.name}: ${err.message}` : 'unknown';
+    }
+
+    reply.status(result.status === 'error' ? 503 : 200).send({ ...result, diagnostics });
   }
 
   async handleLivenessCheck(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
