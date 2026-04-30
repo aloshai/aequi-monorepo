@@ -103,32 +103,36 @@ export class HealthService {
     const result = await this.check();
 
     const diagnostics: Record<string, string> = {};
-    const testFetch = async (label: string, url: string, opts?: RequestInit) => {
-      try {
-        const controller = new AbortController();
-        const t = setTimeout(() => controller.abort(), 5000);
-        const resp = await fetch(url, { ...opts, signal: controller.signal });
-        clearTimeout(t);
-        const body = await resp.text();
-        diagnostics[label] = `${resp.status}: ${body.slice(0, 100)}`;
-      } catch (err) {
-        diagnostics[label] = err instanceof Error ? `${err.name}: ${err.message}` : 'unknown';
-      }
-    };
+
+    const testWithTimeout = (label: string, url: string, opts?: RequestInit): Promise<void> =>
+      new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          diagnostics[label] = 'hard-timeout-3s';
+          resolve();
+        }, 3000);
+
+        fetch(url, { ...opts })
+          .then(async (resp) => {
+            clearTimeout(timer);
+            const body = await resp.text().catch(() => '');
+            diagnostics[label] = `${resp.status}: ${body.slice(0, 100)}`;
+            resolve();
+          })
+          .catch((err) => {
+            clearTimeout(timer);
+            diagnostics[label] = err instanceof Error ? `${err.name}: ${err.message}` : 'unknown';
+            resolve();
+          });
+      });
 
     await Promise.all([
-      testFetch('rpcIncentiv', 'https://rpc.incentiv.io', {
+      testWithTimeout('rpcIncentiv', 'https://rpc.incentiv.io', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] }),
       }),
-      testFetch('rpcByIp', 'https://104.26.10.229', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Host: 'rpc.incentiv.io' },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] }),
-      }),
-      testFetch('google', 'https://www.google.com'),
-      testFetch('ethRpc', 'https://eth.llamarpc.com', {
+      testWithTimeout('google', 'https://www.google.com'),
+      testWithTimeout('ethRpc', 'https://eth.llamarpc.com', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] }),
