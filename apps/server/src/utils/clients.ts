@@ -94,8 +94,8 @@ const buildClient = async (chainConfig: ChainConfig): Promise<PublicClient> => {
   const primaryRpcUrls = rpcUrls.slice(0, MAX_PRIMARY_RPCS)
   const fallbackRpcUrls = rpcUrls.slice(primaryRpcUrls.length)
 
-  const primaryTransports = primaryRpcUrls.map((url) => http(url))
-  const fallbackTransports = fallbackRpcUrls.map((url) => http(url))
+  const primaryTransports = primaryRpcUrls.map((url) => http(url, { timeout: 15_000 }))
+  const fallbackTransports = fallbackRpcUrls.map((url) => http(url, { timeout: 15_000 }))
 
   const cascaded: HttpTransportFactory[] = []
   if (primaryTransports.length === 1) {
@@ -115,5 +115,10 @@ const buildClient = async (chainConfig: ChainConfig): Promise<PublicClient> => {
   return createPublicClient({
     chain: chainConfig.viemChain,
     transport,
+    batch: {
+      multicall: {
+        batchSize: 50,
+      },
+    },
   })
 }

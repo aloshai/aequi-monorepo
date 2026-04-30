@@ -27,6 +27,7 @@ export const buildServer = async (overrideDeps?: AppDeps) => {
 
   const app = Fastify({
     logger: appConfig.server.loggerEnabled ? loggerConfig : false,
+    requestTimeout: 30_000,
   })
 
   app.addHook('onRequest', requestIdHook)

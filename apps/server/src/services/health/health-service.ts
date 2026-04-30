@@ -33,7 +33,7 @@ export class HealthService {
     const chainStatuses: HealthCheckResult['chains'] = {};
 
     // Check each supported chain
-    for (const chainKey of Object.keys(SUPPORTED_CHAINS)) {
+    for (const chainKey of SUPPORTED_CHAINS) {
       try {
         const chain = getChainConfig(chainKey);
         if (!chain) {
