@@ -115,10 +115,5 @@ const buildClient = async (chainConfig: ChainConfig): Promise<PublicClient> => {
   return createPublicClient({
     chain: chainConfig.viemChain,
     transport,
-    batch: {
-      multicall: {
-        batchSize: 50,
-      },
-    },
   })
 }
