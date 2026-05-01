@@ -230,8 +230,7 @@ export class SwapBuilder {
       }
 
       const isLastHop = index === quote.sources.length - 1
-      // If unwrapping at the end, the last hop must send tokens to the executor
-      const hopRecipient = (isLastHop && !useNativeOutput) ? recipient : executorAddress
+      const hopRecipient = executorAddress
       const hopExpectedOut = source.amountOut
       if (!hopExpectedOut || hopExpectedOut <= 0n) {
         throw new Error('Missing hop amountOut for executor construction')
@@ -293,11 +292,7 @@ export class SwapBuilder {
 
       executorCalls.push(plannedCall)
       tokensToFlush.add(tokenIn.address)
-      
-      // Only flush output token if it's coming back to executor (not going directly to recipient)
-      if (hopRecipient === executorAddress) {
-        tokensToFlush.add(tokenOut.address)
-      }
+      tokensToFlush.add(tokenOut.address)
       
       calls.push({
         target: plannedCall.target,
