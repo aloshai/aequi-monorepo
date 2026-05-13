@@ -329,12 +329,13 @@ export class SwapBuilder {
 
     const executorData = encodeFunctionData({
       abi: AEQUI_EXECUTOR_ABI,
-      functionName: 'execute',
+      functionName: 'executeWithRecipient',
       args: [
         pulls,
         approvals,
         executorCalls,
         Array.from(tokensToFlush),
+        recipient,
       ],
     })
 
@@ -532,8 +533,8 @@ export class SwapBuilder {
 
     const executorData = encodeFunctionData({
       abi: AEQUI_EXECUTOR_ABI,
-      functionName: 'execute',
-      args: [pulls, mergedApprovals, executorCalls, Array.from(tokensToFlush)],
+      functionName: 'executeWithRecipient',
+      args: [pulls, mergedApprovals, executorCalls, Array.from(tokensToFlush), recipient],
     })
 
     return {

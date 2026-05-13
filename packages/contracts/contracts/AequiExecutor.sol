@@ -84,6 +84,26 @@ contract AequiExecutor is Ownable2Step, Pausable, ReentrancyGuard {
         Call[] calldata calls,
         address[] calldata tokensToFlush
     ) external payable nonReentrant whenNotPaused returns (bytes[] memory results) {
+        return _execute(pulls, approvals, calls, tokensToFlush, msg.sender);
+    }
+
+    function executeWithRecipient(
+        TokenPull[] calldata pulls,
+        Approval[] calldata approvals,
+        Call[] calldata calls,
+        address[] calldata tokensToFlush,
+        address recipient
+    ) external payable nonReentrant whenNotPaused returns (bytes[] memory results) {
+        return _execute(pulls, approvals, calls, tokensToFlush, recipient == address(0) ? msg.sender : recipient);
+    }
+
+    function _execute(
+        TokenPull[] calldata pulls,
+        Approval[] calldata approvals,
+        Call[] calldata calls,
+        address[] calldata tokensToFlush,
+        address recipient
+    ) private returns (bytes[] memory results) {
         uint256 ethBalanceBefore = address(this).balance - msg.value;
         uint256[] memory tokenBalancesBefore = _snapshotBalances(tokensToFlush);
 
@@ -91,7 +111,7 @@ contract AequiExecutor is Ownable2Step, Pausable, ReentrancyGuard {
         _setApprovals(approvals);
         results = _performCalls(calls);
         _revokeApprovals(approvals);
-        _flushDeltas(msg.sender, tokensToFlush, tokenBalancesBefore, ethBalanceBefore);
+        _flushDeltas(recipient, tokensToFlush, tokenBalancesBefore, ethBalanceBefore);
     }
 
     function _snapshotBalances(address[] calldata tokens) private view returns (uint256[] memory balances) {

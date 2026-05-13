@@ -180,6 +180,45 @@ export const AEQUI_EXECUTOR_ABI = [
   },
   {
     type: 'function',
+    name: 'executeWithRecipient',
+    stateMutability: 'payable',
+    inputs: [
+      {
+        name: 'pulls',
+        type: 'tuple[]',
+        components: [
+          { name: 'token', type: 'address' },
+          { name: 'amount', type: 'uint256' },
+        ],
+      },
+      {
+        name: 'approvals',
+        type: 'tuple[]',
+        components: [
+          { name: 'token', type: 'address' },
+          { name: 'spender', type: 'address' },
+          { name: 'amount', type: 'uint256' },
+          { name: 'revokeAfter', type: 'bool' },
+        ],
+      },
+      {
+        name: 'calls',
+        type: 'tuple[]',
+        components: [
+          { name: 'target', type: 'address' },
+          { name: 'value', type: 'uint256' },
+          { name: 'data', type: 'bytes' },
+          { name: 'injectToken', type: 'address' },
+          { name: 'injectOffset', type: 'uint256' },
+        ],
+      },
+      { name: 'tokensToFlush', type: 'address[]' },
+      { name: 'recipient', type: 'address' },
+    ],
+    outputs: [{ name: 'results', type: 'bytes[]' }],
+  },
+  {
+    type: 'function',
     name: 'feeRecipient',
     stateMutability: 'view',
     inputs: [],
