@@ -8,6 +8,10 @@ WORKDIR /app
 FROM base AS deps
 COPY package.json turbo.json ./
 COPY apps/web/package.json ./apps/web/
+# Web depends on @aequi/core via workspace alias for SETTLER_META_TXN_ABI
+# (Permit2 client-side re-encoding). Without core's package.json in the deps
+# install, the workspace symlink would dangle.
+COPY packages/core/package.json ./packages/core/
 RUN bun install
 
 # Build stage
@@ -17,7 +21,14 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY turbo.json ./
 COPY package.json ./
+# Vite resolves @aequi/core via the workspace src tree; ship the whole package.
+COPY packages/core ./packages/core
 COPY apps/web ./apps/web
+
+# Build core first so dist exists if @aequi/core's package.json declares a
+# dist entrypoint. Most Vite configs resolve from src/, but this is a safe
+# belt-and-braces step.
+RUN cd packages/core && bun run build || true
 
 ARG VITE_API_BASE_URL=http://localhost:3000
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
