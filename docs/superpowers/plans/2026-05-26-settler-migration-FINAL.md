@@ -63,9 +63,15 @@ Real-RPC fork sims (executed against `bsc-dataseed.binance.org` + `ethereum-rpc.
   - Dokploy project ID: `U1QHclsMWNQdqIGBbEt7s` (Aequi)
   - Environment ID: `RP_ZO5CUc_D2bapdqz5re`
   - Compose service ID: `whduOtYMKw4VdTnt6LouU` (`aequi-settler-staging`)
-  - Subdomains: `aequi-staging.alosha.me` (web), `aequi-api-staging.alosha.me` (api)
-  - Auto-deploy on push to `feat/settler-migration`
-  - Initial deploy queued via `compose.deploy` API call
+  - Subdomains: `settler.alosha.me` (web), `settler-api.alosha.me` (api).
+    (NOTE: original `*-staging.alosha.me` subdomains hit a Cloudflare
+    redirect rule and were swapped to plain `settler*` to avoid it.)
+  - Container names: `aequi-server-settler` + `aequi-web-settler`
+    (parameterised via `STACK_SUFFIX` in docker-compose; production
+    uses `${STACK_SUFFIX:-prod}` → `aequi-server-prod`, etc.).
+  - Auto-deploy on push to `feat/settler-migration`.
+  - Deploy succeeds end-to-end; containers running on `dokploy-network`,
+    Traefik routes via STACK_SUFFIX-qualified router names.
 
 ### What was kept
 
