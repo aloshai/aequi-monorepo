@@ -52,6 +52,8 @@ export interface ApproveParams {
   infinite?: boolean
 }
 
+export type TokenFlow = 'aequi-executor' | 'settler-allowance-holder' | 'settler-permit2'
+
 export interface SwapParams {
   chain: ChainKey
   tokenA: string
@@ -63,6 +65,8 @@ export interface SwapParams {
   deadlineSeconds?: number
   forceMultiHop?: boolean
   quoteId?: string
+  /** Execution path selector. Defaults to 'aequi-executor' on the server. */
+  tokenFlow?: TokenFlow
 }
 
 export const fetchExchangeDirectory = async (params: ExchangeParams): Promise<ExchangeResponse> => {

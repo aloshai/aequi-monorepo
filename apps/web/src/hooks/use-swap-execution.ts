@@ -131,6 +131,7 @@ export function useSwapExecution(
           : undefined,
         forceMultiHop: store.forceMultiHop,
         quoteId: store.quoteResult.quoteId,
+        tokenFlow: settings.tokenFlow,
       })
 
       store.setPreparedSwap(swapData)

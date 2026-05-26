@@ -75,7 +75,7 @@ function App() {
     setSwapConfirmModalOpen,
   } = useUiStore()
 
-  const { slippageBps, setSlippageBps, deadlineSeconds, setDeadlineSeconds, version, setVersion, approvalMode, setApprovalMode, settingsModalOpen, openSettings, closeSettings } = useSettingsStore()
+  const { slippageBps, setSlippageBps, deadlineSeconds, setDeadlineSeconds, version, setVersion, approvalMode, setApprovalMode, tokenFlow, setTokenFlow, settingsModalOpen, openSettings, closeSettings } = useSettingsStore()
   const { importedTokens, tokenModalOpen, selectingToken, importToken, openModal, closeModal } = useTokenStore()
 
   const { address, isConnected } = useAccount()
@@ -494,6 +494,8 @@ function App() {
         recommendedSlippageBps={quoteResult?.recommendedSlippageBps}
         approvalMode={approvalMode}
         setApprovalMode={setApprovalMode}
+        tokenFlow={tokenFlow}
+        setTokenFlow={setTokenFlow}
       />
 
       <SwapConfirmModal

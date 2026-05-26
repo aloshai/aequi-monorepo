@@ -5,6 +5,8 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 
+type TokenFlow = 'aequi-executor' | 'settler-allowance-holder' | 'settler-permit2'
+
 interface SettingsModalProps {
   isOpen: boolean
   onClose: () => void
@@ -17,6 +19,8 @@ interface SettingsModalProps {
   recommendedSlippageBps?: number
   approvalMode: 'infinite' | 'exact'
   setApprovalMode: (value: 'infinite' | 'exact') => void
+  tokenFlow?: TokenFlow
+  setTokenFlow?: (value: TokenFlow) => void
 }
 
 const ROUTE_OPTIONS = ['auto', 'v2', 'v3'] as const
@@ -34,6 +38,8 @@ export function SettingsModal({
   recommendedSlippageBps,
   approvalMode,
   setApprovalMode,
+  tokenFlow,
+  setTokenFlow,
 }: SettingsModalProps) {
   const [customSlippage, setCustomSlippage] = useState('')
   const [deadlineMinutes, setDeadlineMinutes] = useState('')
@@ -181,6 +187,44 @@ export function SettingsModal({
                 </Button>
               </div>
             </section>
+
+            {tokenFlow != null && setTokenFlow != null && (
+              <section className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    Execution Backend
+                  </p>
+                  <Badge variant="outline">advanced</Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Aequi Executor is the stable default. Settler routes swaps through 0x Settler — wider DEX coverage but requires Settler deployment on the active chain.
+                </p>
+                <div className="grid grid-cols-1 gap-2">
+                  <Button
+                    type="button"
+                    variant={tokenFlow === 'aequi-executor' ? 'default' : 'outline'}
+                    onClick={() => setTokenFlow('aequi-executor')}
+                  >
+                    Aequi Executor (default)
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={tokenFlow === 'settler-allowance-holder' ? 'default' : 'outline'}
+                    onClick={() => setTokenFlow('settler-allowance-holder')}
+                  >
+                    0x Settler · AllowanceHolder
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={tokenFlow === 'settler-permit2' ? 'default' : 'outline'}
+                    onClick={() => setTokenFlow('settler-permit2')}
+                    disabled
+                  >
+                    0x Settler · Permit2 (coming soon)
+                  </Button>
+                </div>
+              </section>
+            )}
           </div>
         </motion.div>
       </DialogContent>
