@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: apps/server/Dockerfile
-    container_name: aequi-server
+    container_name: aequi-server-${STACK_SUFFIX:-prod}
     expose:
       - "3000"
     env_file:
@@ -17,10 +17,14 @@ services:
       - outbound
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.aequi-api.rule=Host(`${API_DOMAIN:-api.yourdomain.com}`)"
-      - "traefik.http.routers.aequi-api.entrypoints=websecure"
-      - "traefik.http.routers.aequi-api.tls=true"
-      - "traefik.http.services.aequi-api.loadbalancer.server.port=3000"
+      # Router name includes ${STACK_SUFFIX:-prod} so multiple environments
+      # (production + staging) can coexist on the same Traefik instance
+      # without colliding on router name.
+      - "traefik.http.routers.aequi-api-${STACK_SUFFIX:-prod}.rule=Host(`${API_DOMAIN:-api.yourdomain.com}`)"
+      - "traefik.http.routers.aequi-api-${STACK_SUFFIX:-prod}.entrypoints=websecure"
+      - "traefik.http.routers.aequi-api-${STACK_SUFFIX:-prod}.tls=true"
+      - "traefik.http.routers.aequi-api-${STACK_SUFFIX:-prod}.service=aequi-api-${STACK_SUFFIX:-prod}"
+      - "traefik.http.services.aequi-api-${STACK_SUFFIX:-prod}.loadbalancer.server.port=3000"
 
   web:
     build:
@@ -28,7 +32,7 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         - VITE_API_BASE_URL=${API_URL:-https://api.yourdomain.com}
-    container_name: aequi-web
+    container_name: aequi-web-${STACK_SUFFIX:-prod}
     expose:
       - "80"
     depends_on:
@@ -39,10 +43,11 @@ services:
       - dokploy-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.aequi-web.rule=Host(`${WEB_DOMAIN:-yourdomain.com}`)"
-      - "traefik.http.routers.aequi-web.entrypoints=websecure"
-      - "traefik.http.routers.aequi-web.tls=true"
-      - "traefik.http.services.aequi-web.loadbalancer.server.port=80"
+      - "traefik.http.routers.aequi-web-${STACK_SUFFIX:-prod}.rule=Host(`${WEB_DOMAIN:-yourdomain.com}`)"
+      - "traefik.http.routers.aequi-web-${STACK_SUFFIX:-prod}.entrypoints=websecure"
+      - "traefik.http.routers.aequi-web-${STACK_SUFFIX:-prod}.tls=true"
+      - "traefik.http.routers.aequi-web-${STACK_SUFFIX:-prod}.service=aequi-web-${STACK_SUFFIX:-prod}"
+      - "traefik.http.services.aequi-web-${STACK_SUFFIX:-prod}.loadbalancer.server.port=80"
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
       interval: 30s
