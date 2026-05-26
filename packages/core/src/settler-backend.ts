@@ -63,7 +63,25 @@ const encodeUniV2SwapInfo = (zeroForOne: boolean, poolFeeBps: number): number =>
   return (zeroForOne ? 1 << 16 : 0) | (poolFeeBps & 0xffff)
 }
 
-const encodeV3PackedPath = (tokens: Address[], fees: number[]): Hex => {
+/**
+ * Settler V3 path layout (per src/core/UniswapV3Fork.sol):
+ *   sizeof(address inputToken | uint8 forkId | uint24 poolId | uint160 sqrtPriceLimitX96 | address outputToken)
+ *   = 20 + 1 + 3 + 20 + 20 = 64 bytes per hop.
+ *
+ * This differs from the standard Uniswap V3 path (which is 43 bytes per hop —
+ * `address-uint24-address`). Settler's enhanced path adds `forkId` (which V3
+ * fork the pool belongs to) and `sqrtPriceLimitX96` (per-hop price guard, 0
+ * = no limit).
+ *
+ * For multi-hop: each subsequent hop repeats the `forkId | poolId | sqrtLimit | outputToken`
+ * tail. The shared `outputToken` of hop N is the `inputToken` of hop N+1, so
+ * the wire format is `in0 | f0 | p0 | s0 | in1 | f1 | p1 | s1 | ... | inN | fN | pN | sN | outN`.
+ */
+const encodeV3PackedPath = (
+  tokens: Address[],
+  fees: number[],
+  forkIds: number[]
+): Hex => {
   if (tokens.length < 2) {
     throw new AequiError('V3 path requires ≥2 tokens', ErrorCode.INVALID_REQUEST)
   }
@@ -74,19 +92,51 @@ const encodeV3PackedPath = (tokens: Address[], fees: number[]): Hex => {
       { metadata: { tokens: tokens.length, fees: fees.length } }
     )
   }
-  // Use viem's encodePacked: each token is bytes20, each fee is uint24 (3 bytes).
-  // The interleaved encoding produces `tok0|fee0|tok1|fee1|...|tokN`.
+  if (forkIds.length !== fees.length) {
+    throw new AequiError(
+      'V3 path forkId count must equal fee count',
+      ErrorCode.INVALID_REQUEST,
+      { metadata: { fees: fees.length, forkIds: forkIds.length } }
+    )
+  }
   const types: string[] = []
   const values: unknown[] = []
   for (let i = 0; i < tokens.length; i += 1) {
     types.push('address')
     values.push(tokens[i])
     if (i < fees.length) {
-      types.push('uint24')
+      types.push('uint8')        // forkId
+      values.push(forkIds[i])
+      types.push('uint24')       // poolId (a.k.a. fee tier)
       values.push(fees[i])
+      types.push('uint160')      // sqrtPriceLimitX96 (0 = no limit)
+      values.push(0n)
     }
   }
   return encodePacked(types as never, values as never)
+}
+
+/**
+ * Map Aequi DEX id to Settler V3 forkId. Lifted from
+ * lib/0x-settler/src/core/univ3forks/*.sol. Unknown DEX ids throw, since
+ * dispatching to an unrecognised fork would silently route to the wrong
+ * factory on chain.
+ */
+const dexIdToSettlerForkId = (dexId: string): number => {
+  switch (dexId) {
+    case 'uniswap-v3':
+      return 0
+    case 'pancake-v3':
+      return 1
+    case 'sushiswap-v3':
+      return 2
+    default:
+      throw new AequiError(
+        `No Settler V3 forkId mapping for dex='${dexId}'`,
+        ErrorCode.NOT_IMPLEMENTED,
+        { metadata: { dexId } }
+      )
+  }
 }
 
 interface PoolResolveContext {
@@ -424,7 +474,8 @@ export class SettlerBackend implements ExecutorBackend {
         ErrorCode.INVALID_REQUEST
       )
     }
-    const path = encodeV3PackedPath([ctx.tokenIn, ctx.tokenOut], [ctx.feeTier])
+    const forkId = dexIdToSettlerForkId(ctx.dexId)
+    const path = encodeV3PackedPath([ctx.tokenIn, ctx.tokenOut], [ctx.feeTier], [forkId])
     const data = encodeAbiParameters(
       [
         { type: 'address' }, // recipient

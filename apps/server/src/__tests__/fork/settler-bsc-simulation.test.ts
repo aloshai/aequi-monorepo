@@ -77,6 +77,12 @@ describe.skipIf(SHOULD_SKIP)('SettlerBackend ↔ real BSC Settler eth_call', () 
     expect((code ?? '0x').length).toBeGreaterThan(2)
   }, 30_000)
 
+  it('BSC SettlerMetaTxn bytecode is present', async () => {
+    const code = await client.getCode({ address: appConfig.settler.byChain.bsc.settlerMetaTxn! })
+    expect(code).toBeDefined()
+    expect((code ?? '0x').length).toBeGreaterThan(2)
+  }, 30_000)
+
   it('single-hop V2 WBNB → BUSD: backend calldata simulates without reverting', async () => {
     const chain = CHAIN_CONFIGS.bsc
     const backend = new SettlerBackend()
