@@ -40,6 +40,7 @@ const envSchema = z.object({
   SETTLER_META_TXN_BSC: z.string().optional(),
   SETTLER_INCENTIV: z.string().optional(),
   SETTLER_META_TXN_INCENTIV: z.string().optional(),
+  FEE_RECIPIENT: z.string().optional(),
 
   // Swap
   SWAP_QUOTE_TTL_SECONDS: z.coerce.number().int().positive().default(15),

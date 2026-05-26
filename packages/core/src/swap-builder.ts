@@ -26,7 +26,7 @@ export interface SwapBuildParams {
 }
 
 export interface SwapTransaction {
-  kind: 'executor'
+  kind: 'executor' | 'settler-allowance-holder' | 'settler-permit2'
   dexId: string
   router: Address
   spender: Address

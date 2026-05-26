@@ -3,6 +3,7 @@ import type { Address, Hex } from 'viem'
 import { encodeAbiParameters, keccak256, pad, toHex } from 'viem'
 import type { AppDeps } from '../deps'
 import type { QuoteResult } from '../types'
+import { appConfig } from '../config/app-config'
 import { SWAP_QUOTE_TTL_SECONDS } from '../config/constants'
 import { swapBodySchema } from '../schemas/swap.schema'
 import { resolveChain, resolveRoutePreference, resolveEffectiveTokens, formatPriceQuote } from '../utils/route-helpers'
@@ -10,6 +11,7 @@ import { normalizeAddress } from '../utils/trading'
 import { formatAmountFromUnits, parseAmountToUnits } from '../utils/units'
 import { decodeRevertReason } from '../utils/revert-decoder'
 import { computeRecommendedSlippage } from '../services/quote/quote-service'
+import type { SwapTransaction } from '@aequi/core'
 
 const COMMON_BALANCE_BASE_SLOTS = [0n, 2n, 3n, 51n, 101n]
 
@@ -145,12 +147,54 @@ export async function handleSwap(deps: AppDeps, request: FastifyRequest, reply: 
 
   const { quote, amountOutMin, tokenOut, slippageBps: boundedSlippage } = quoteResult
 
-  let transaction
+  const tokenFlow = parsed.data.tokenFlow ?? 'aequi-executor'
+
+  let transaction: SwapTransaction
   try {
-    transaction = deps.swapBuilder.build(chain, {
-      quote, amountOutMin, recipient, slippageBps: boundedSlippage,
-      deadlineSeconds, useNativeInput, useNativeOutput,
-    })
+    if (tokenFlow === 'settler-allowance-holder') {
+      const result = deps.settlerBackend.build({
+        quote,
+        amountOutMin,
+        recipient,
+        useNativeInput,
+        useNativeOutput,
+        tokenFlow: 'allowance-holder',
+        chain,
+        fee: appConfig.fee.bps > 0 && appConfig.fee.recipient
+          ? { bps: appConfig.fee.bps, recipient: appConfig.fee.recipient }
+          : null,
+        deadlineSeconds,
+      })
+      // Map ExecutorBackendResult onto the legacy SwapTransaction shape so
+      // the rest of the controller (simulation, response) keeps working.
+      // executor=null tells the frontend to skip multicall unpacking.
+      transaction = {
+        kind: result.kind,
+        dexId: 'settler',
+        router: result.settler,
+        spender: result.to, // AllowanceHolder
+        amountIn: quote.amountIn,
+        amountOut: quote.amountOut,
+        amountOutMinimum: amountOutMin,
+        deadline: Math.floor(Date.now() / 1000) + deadlineSeconds,
+        calls: [
+          { target: result.to, allowFailure: false, callData: result.data, value: result.value },
+        ],
+        call: { to: result.to, data: result.data, value: result.value },
+        executor: { pulls: [], approvals: [], calls: [], tokensToFlush: [] },
+      }
+    } else if (tokenFlow === 'settler-permit2') {
+      reply.status(501)
+      return {
+        error: 'not_implemented',
+        message: 'settler-permit2 token flow is not yet wired in the server. Use settler-allowance-holder or aequi-executor.',
+      }
+    } else {
+      transaction = deps.swapBuilder.build(chain, {
+        quote, amountOutMin, recipient, slippageBps: boundedSlippage,
+        deadlineSeconds, useNativeInput, useNativeOutput,
+      })
+    }
   } catch (error) {
     reply.status(400)
     return { error: 'calldata_error', message: (error as Error).message }
@@ -226,6 +270,7 @@ export async function handleSwap(deps: AppDeps, request: FastifyRequest, reply: 
     quoteTimestamp,
     quoteExpiresAt,
     quoteValidSeconds: SWAP_QUOTE_TTL_SECONDS,
+    tokenFlow,
     quoteBlockNumber: latestBlockNumber ? latestBlockNumber.toString() : null,
     quoteBlockTimestamp: latestBlockTimestamp ? Number(latestBlockTimestamp) : null,
     simulationPassed,

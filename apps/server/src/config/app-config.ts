@@ -109,6 +109,10 @@ export const appConfig = {
   },
   fee: {
     bps: parseIntWithDefault(process.env.FEE_BPS, 30, 0),
+    // Settler's POSITIVE_SLIPPAGE action requires a non-zero recipient. Until
+    // a real fee wallet is set via FEE_RECIPIENT, we use the zero address —
+    // SettlerBackend treats fee=null when this is the case (no fee skim).
+    recipient: parseAddressOrNull(process.env.FEE_RECIPIENT),
   },
   settler: {
     allowanceHolder: getAddress(DEFAULTS.settler.allowanceHolder),
