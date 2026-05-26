@@ -42,7 +42,7 @@ import {
   SETTLER_ETH_ADDRESS,
   type SettlerAction,
 } from './settler-types'
-import type { TokenMetadata } from './types'
+import type { PriceQuote, TokenMetadata } from './types'
 
 const ZERO_BYTES32: Hex = `0x${'00'.repeat(32)}` as Hex
 const ZID_AEQUI: Hex = ZERO_BYTES32 // No zid/affiliate tracking yet.
@@ -139,8 +139,30 @@ export class SettlerBackend implements ExecutorBackend {
       actions.push(this.encodeWrap(wrappedNative, plan.quote.amountIn))
     }
 
-    for (let i = 0; i < plan.quote.sources.length; i += 1) {
-      actions.push(this.encodeHopAction(plan, i, settlerAddress))
+    if (plan.quote.isSplit) {
+      const splits = plan.quote.splits!
+      let consumedBps = 0
+      for (let legIdx = 0; legIdx < splits.length; legIdx += 1) {
+        const leg = splits[legIdx]!
+        const remainingBps = 10_000 - consumedBps
+        // The first hop of each leg consumes a percentage of the current
+        // Settler balance of the input token. Subsequent hops within the
+        // leg consume 100% of the previous hop's output.
+        const firstHopBps =
+          legIdx === splits.length - 1 || remainingBps === 0
+            ? 10_000
+            : Math.floor((leg.ratioBps * 10_000) / remainingBps)
+        consumedBps += leg.ratioBps
+
+        for (let hopIdx = 0; hopIdx < leg.quote.sources.length; hopIdx += 1) {
+          const bps = hopIdx === 0 ? firstHopBps : 10_000
+          actions.push(this.encodeSplitHopAction(plan, leg, hopIdx, settlerAddress, bps))
+        }
+      }
+    } else {
+      for (let i = 0; i < plan.quote.sources.length; i += 1) {
+        actions.push(this.encodeHopAction(plan, i, settlerAddress))
+      }
     }
 
     if (plan.useNativeOutput) {
@@ -215,12 +237,23 @@ export class SettlerBackend implements ExecutorBackend {
 
   private assertSupported(plan: SwapPlan): void {
     if (plan.quote.isSplit) {
-      // TODO_SPLITS — split routes will dispatch one outer Settler action
-      // per leg with bps-distributed inputs. Not implemented yet.
-      throw new AequiError(
-        'Split routes are not yet supported by SettlerBackend',
-        ErrorCode.NOT_IMPLEMENTED
-      )
+      if (!plan.quote.splits || plan.quote.splits.length === 0) {
+        throw new AequiError(
+          'isSplit set but no splits provided',
+          ErrorCode.INVALID_REQUEST
+        )
+      }
+      const totalRatio = plan.quote.splits.reduce((acc, leg) => acc + leg.ratioBps, 0)
+      if (totalRatio !== 10_000) {
+        throw new AequiError(
+          `Split leg ratios must sum to 10000 (got ${totalRatio})`,
+          ErrorCode.INVALID_REQUEST,
+          { metadata: { totalRatio } }
+        )
+      }
+      // Splits are handled by the dedicated split path below; do not check
+      // top-level hopVersions (each leg has its own).
+      return
     }
 
     for (const v of plan.quote.hopVersions) {
@@ -292,16 +325,60 @@ export class SettlerBackend implements ExecutorBackend {
     }
 
     if (hopVersion === 'v2') {
-      return this.encodeV2HopAction(plan, ctx, hopRecipient, hopMinOut)
+      return this.encodeV2HopAction(plan, ctx, hopRecipient, hopMinOut, SETTLER_BPS_FULL)
     }
-    return this.encodeV3HopAction(plan, ctx, hopRecipient, hopMinOut)
+    return this.encodeV3HopAction(ctx, hopRecipient, hopMinOut, SETTLER_BPS_FULL)
+  }
+
+  private encodeSplitHopAction(
+    plan: SwapPlan,
+    leg: { quote: PriceQuote; ratioBps: number },
+    hopIndex: number,
+    settlerAddress: Address,
+    bps: number
+  ): SettlerAction {
+    const source = leg.quote.sources[hopIndex]
+    const tokenIn = leg.quote.path[hopIndex] as TokenMetadata | undefined
+    const tokenOut = leg.quote.path[hopIndex + 1] as TokenMetadata | undefined
+    const hopVersion = leg.quote.hopVersions[hopIndex]
+    if (!source || !tokenIn || !tokenOut || !hopVersion) {
+      throw new AequiError(
+        `Missing split-leg route metadata at hop ${hopIndex}`,
+        ErrorCode.INVALID_REQUEST,
+        { metadata: { hopIndex, legRatio: leg.ratioBps } }
+      )
+    }
+    if (hopVersion !== 'v2' && hopVersion !== 'v3') {
+      throw new AequiError(
+        `Hop version '${hopVersion}' is not supported by SettlerBackend yet`,
+        ErrorCode.NOT_IMPLEMENTED,
+        { metadata: { hopVersion } }
+      )
+    }
+    const ctx: PoolResolveContext = {
+      dexId: source.dexId,
+      tokenIn: getAddress(tokenIn.address),
+      tokenOut: getAddress(tokenOut.address),
+      poolAddress: source.poolAddress ? getAddress(source.poolAddress) : undefined,
+      feeTier: source.feeTier,
+    }
+    // Split leg hops always carry minOut=0; overall protection comes from
+    // Settler.execute's AllowedSlippage check on the buyToken after all
+    // actions have run.
+    const hopMinOut = 0n
+    const bpsBig = BigInt(bps)
+    if (hopVersion === 'v2') {
+      return this.encodeV2HopAction(plan, ctx, settlerAddress, hopMinOut, bpsBig)
+    }
+    return this.encodeV3HopAction(ctx, settlerAddress, hopMinOut, bpsBig)
   }
 
   private encodeV2HopAction(
     plan: SwapPlan,
     ctx: PoolResolveContext,
     recipient: Address,
-    amountOutMin: bigint
+    amountOutMin: bigint,
+    bps: bigint
   ): SettlerAction {
     if (!ctx.poolAddress) {
       throw new AequiError(
@@ -325,7 +402,7 @@ export class SettlerBackend implements ExecutorBackend {
         { type: 'uint24' }, // swapInfo
         { type: 'uint256' }, // amountOutMin
       ],
-      [recipient, ctx.tokenIn, SETTLER_BPS_FULL, ctx.poolAddress, swapInfo, amountOutMin]
+      [recipient, ctx.tokenIn, bps, ctx.poolAddress, swapInfo, amountOutMin]
     )
 
     return {
@@ -336,10 +413,10 @@ export class SettlerBackend implements ExecutorBackend {
   }
 
   private encodeV3HopAction(
-    plan: SwapPlan,
     ctx: PoolResolveContext,
     recipient: Address,
-    amountOutMin: bigint
+    amountOutMin: bigint,
+    bps: bigint
   ): SettlerAction {
     if (typeof ctx.feeTier !== 'number') {
       throw new AequiError(
@@ -355,7 +432,7 @@ export class SettlerBackend implements ExecutorBackend {
         { type: 'bytes' }, // path
         { type: 'uint256' }, // amountOutMin
       ],
-      [recipient, SETTLER_BPS_FULL, path, amountOutMin]
+      [recipient, bps, path, amountOutMin]
     )
     return {
       selector: SETTLER_ACTION_SELECTORS.UNISWAPV3,

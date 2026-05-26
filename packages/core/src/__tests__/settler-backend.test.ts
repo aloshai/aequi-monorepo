@@ -292,11 +292,78 @@ describe('SettlerBackend.build (AllowanceHolder mode)', () => {
     expect(amountOutMin).toBe(475_000_000_000_000_000n)
   })
 
-  it('rejects split routes with NOT_IMPLEMENTED', () => {
-    const quote = baseQuote({ isSplit: true, splits: [] as never })
+  it('split routes: encodes per-leg actions with scaled bps', () => {
+    // 30/40/30 split: leg ratios produce bps of 3000, 5714, 10000 respectively
+    // (consumeBps math: remaining=10000 -> 3000; remaining=7000 -> floor(4000*10000/7000)=5714;
+    // last leg -> 10000).
+    const legQuote = (poolAddress: Address): PriceQuote => ({
+      ...baseQuote(),
+      sources: [
+        { dexId: 'pancake-v2', poolAddress, amountIn: 1n, amountOut: 1n },
+      ],
+    })
+    const splitQuote: PriceQuote = {
+      ...baseQuote(),
+      isSplit: true,
+      splits: [
+        { quote: legQuote(POOL_AB), ratioBps: 3_000 },
+        { quote: legQuote(POOL_BC), ratioBps: 4_000 },
+        { quote: legQuote(POOL_AB), ratioBps: 3_000 },
+      ],
+    }
+
+    const result = backend.build({
+      quote: splitQuote,
+      recipient: RECIPIENT,
+      amountOutMin: 475_000_000_000_000_000n,
+      useNativeInput: false,
+      useNativeOutput: false,
+      tokenFlow: 'allowance-holder',
+      chain: makeChain(),
+      fee: null,
+      deadlineSeconds: 600,
+    })
+
+    const decoded = decodeOuter(result.data)
+    expect(decoded.actions).toHaveLength(3) // one hop per leg
+
+    const decodeV2 = (action: `0x${string}`) =>
+      decodeAbiParameters(
+        [
+          { type: 'address' },
+          { type: 'address' },
+          { type: 'uint256' },
+          { type: 'address' },
+          { type: 'uint24' },
+          { type: 'uint256' },
+        ],
+        ('0x' + action.slice(10)) as `0x${string}`
+      ) as readonly [Address, Address, bigint, Address, number, bigint]
+
+    const [, , bps0, , ,] = decodeV2(decoded.actions[0]!)
+    const [, , bps1, , ,] = decodeV2(decoded.actions[1]!)
+    const [, , bps2, , ,] = decodeV2(decoded.actions[2]!)
+    expect(bps0).toBe(3_000n)
+    expect(bps1).toBe(5_714n)
+    expect(bps2).toBe(10_000n)
+  })
+
+  it('rejects splits with mismatched ratios', () => {
+    const legQuote: PriceQuote = {
+      ...baseQuote(),
+      sources: [{ dexId: 'pancake-v2', poolAddress: POOL_AB, amountIn: 1n, amountOut: 1n }],
+    }
+    const badSplit: PriceQuote = {
+      ...baseQuote(),
+      isSplit: true,
+      splits: [
+        { quote: legQuote, ratioBps: 5_000 },
+        { quote: legQuote, ratioBps: 4_000 }, // sums to 9000, not 10000
+      ],
+    }
     expect(() =>
       backend.build({
-        quote,
+        quote: badSplit,
         recipient: RECIPIENT,
         amountOutMin: 475_000_000_000_000_000n,
         useNativeInput: false,
@@ -306,7 +373,7 @@ describe('SettlerBackend.build (AllowanceHolder mode)', () => {
         fee: null,
         deadlineSeconds: 600,
       })
-    ).toThrow(/Split routes/)
+    ).toThrow(/ratios must sum to 10000/)
   })
 
   it('rejects Permit2 mode with NOT_IMPLEMENTED', () => {
