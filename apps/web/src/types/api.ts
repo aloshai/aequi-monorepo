@@ -134,28 +134,41 @@ export interface RouterCall {
   value: string
 }
 
-export interface ExecutorCallPlan {
-  target: string
-  allowFailure: boolean
-  callData: string
-  value: string
-}
-
-export interface ExecutorPlanCall {
-  target: string
-  value: string
-  data: string
-}
-
-export interface ExecutorPlan {
-  pulls: Array<{ token: string; amount: string }>
-  approvals: Array<{ token: string; spender: string; amount: string; revokeAfter: boolean }>
-  calls: ExecutorPlanCall[]
-  tokensToFlush: string[]
+/** EIP-712 typed-data payload + slippage tuple returned for `settler-permit2`. */
+export interface Permit2PayloadResponse {
+  typedData: {
+    domain: {
+      name: string
+      chainId: number
+      verifyingContract: string
+    }
+    types: Record<string, Array<{ name: string; type: string }>>
+    primaryType: 'PermitWitnessTransferFrom'
+    message: {
+      permitted: { token: string; amount: string }
+      spender: string
+      nonce: string
+      deadline: string
+      witness: {
+        recipient: string
+        buyToken: string
+        minAmountOut: string
+        actions: string[]
+      }
+    }
+  }
+  slippage: {
+    recipient: string
+    buyToken: string
+    minAmountOut: string
+  }
+  actions: string[]
+  msgSender: string
+  zid: string
 }
 
 export interface SwapTransactionPayload {
-  kind: 'direct' | 'executor'
+  kind: 'settler-allowance-holder' | 'settler-permit2'
   dexId: string
   router: string
   spender: string
@@ -163,9 +176,8 @@ export interface SwapTransactionPayload {
   amountOut: string
   amountOutMinimum: string
   deadline: number
-  calls: ExecutorCallPlan[]
-  call: RouterCall | null
-  executor: ExecutorPlan | null
+  call: RouterCall
+  permit2: Permit2PayloadResponse | null
   estimatedGas?: string
 }
 

@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 
-type TokenFlow = 'aequi-executor' | 'settler-allowance-holder' | 'settler-permit2'
+type TokenFlow = 'settler-allowance-holder' | 'settler-permit2'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -192,35 +192,28 @@ export function SettingsModal({
               <section className="space-y-3">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                    Execution Backend
+                    Token Flow
                   </p>
-                  <Badge variant="outline">advanced</Badge>
+                  <Badge variant="outline">0x Settler</Badge>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Aequi Executor is the stable default. Settler routes swaps through 0x Settler — wider DEX coverage but requires Settler deployment on the active chain.
+                  AllowanceHolder: one-time ERC20 approve, then each swap is a single tx (recommended).
+                  Permit2: one-time approve(Permit2), then each swap requires an EIP-712 signature in the wallet — gas-efficient and revocable per swap.
                 </p>
                 <div className="grid grid-cols-1 gap-2">
-                  <Button
-                    type="button"
-                    variant={tokenFlow === 'aequi-executor' ? 'default' : 'outline'}
-                    onClick={() => setTokenFlow('aequi-executor')}
-                  >
-                    Aequi Executor (default)
-                  </Button>
                   <Button
                     type="button"
                     variant={tokenFlow === 'settler-allowance-holder' ? 'default' : 'outline'}
                     onClick={() => setTokenFlow('settler-allowance-holder')}
                   >
-                    0x Settler · AllowanceHolder
+                    AllowanceHolder (recommended)
                   </Button>
                   <Button
                     type="button"
                     variant={tokenFlow === 'settler-permit2' ? 'default' : 'outline'}
                     onClick={() => setTokenFlow('settler-permit2')}
-                    disabled
                   >
-                    0x Settler · Permit2 (coming soon)
+                    Permit2 (sign per swap)
                   </Button>
                 </div>
               </section>

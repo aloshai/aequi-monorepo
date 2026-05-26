@@ -1,6 +1,5 @@
 export * from './types'
 export * from './abi'
-export * from './swap-builder'
 export * from './errors'
 export * from './logger'
 export * from './settler-types'

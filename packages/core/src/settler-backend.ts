@@ -28,15 +28,22 @@
 
 import { encodeAbiParameters, encodeFunctionData, encodePacked, getAddress } from 'viem'
 import type { Address, Hex } from 'viem'
-import { ALLOWANCE_HOLDER_ABI, SETTLER_EXECUTE_ABI, WETH_ABI } from './abi'
+import {
+  ALLOWANCE_HOLDER_ABI,
+  SETTLER_EXECUTE_ABI,
+  SETTLER_META_TXN_ABI,
+  WETH_ABI,
+} from './abi'
 import { AequiError, ErrorCode } from './errors'
 import type {
   ExecutorBackend,
   ExecutorBackendResult,
+  Permit2TypedData,
   SwapPlan,
 } from './executor-backend'
 import {
   ALLOWANCE_HOLDER_ADDRESS as DEFAULT_ALLOWANCE_HOLDER,
+  PERMIT2_ADDRESS as DEFAULT_PERMIT2,
   SETTLER_ACTION_SELECTORS,
   SETTLER_BPS_FULL,
   SETTLER_ETH_ADDRESS,
@@ -250,14 +257,8 @@ export class SettlerBackend implements ExecutorBackend {
       args: [slippage, actions.map((a) => this.concatActionCalldata(a)), ZID_AEQUI],
     })
 
-    if (plan.tokenFlow !== 'allowance-holder') {
-      // TODO_PERMIT2 — wrap `innerCalldata` differently and surface EIP-712
-      // payload to the caller. Until then, hard-fail rather than silently
-      // building the wrong calldata.
-      throw new AequiError(
-        'Permit2 token-flow not yet implemented in SettlerBackend',
-        ErrorCode.NOT_IMPLEMENTED
-      )
+    if (plan.tokenFlow === 'permit2') {
+      return this.buildPermit2(plan, actions, inputToken, outputToken, settlerAddress)
     }
 
     const ahCalldata = encodeFunctionData({
@@ -278,6 +279,213 @@ export class SettlerBackend implements ExecutorBackend {
       data: ahCalldata,
       value: plan.useNativeInput ? plan.quote.amountIn : 0n,
       settler: settlerAddress,
+    }
+  }
+
+  /**
+   * Permit2 mode build. Differs from AllowanceHolder in three ways:
+   *   1. Target is SettlerMetaTxn (not AllowanceHolder).
+   *   2. First action MUST be METATXN_TRANSFER_FROM (consumes the sig and
+   *      pulls input tokens via Permit2). Native input is not supported in
+   *      this mode — the user would have nothing to sign over.
+   *   3. The full call is `executeMetaTxn(slippage, actions, zid, msgSender, sig)`
+   *      where `sig` comes from the wallet signing a PermitWitnessTransferFrom
+   *      typed data whose witness is SlippageAndActions(recipient, buyToken,
+   *      minAmountOut, actions).
+   */
+  private buildPermit2(
+    plan: SwapPlan,
+    swapActions: SettlerAction[],
+    inputToken: TokenMetadata,
+    outputToken: TokenMetadata,
+    settlerAddress: Address
+  ): ExecutorBackendResult {
+    if (plan.useNativeInput) {
+      throw new AequiError(
+        'Permit2 mode does not support native input. Use settler-allowance-holder for ETH/BNB swaps.',
+        ErrorCode.INVALID_REQUEST
+      )
+    }
+
+    const settlerMetaTxn = plan.chain.settler?.settlerMetaTxn
+    if (!settlerMetaTxn || settlerMetaTxn === ZERO_ADDRESS) {
+      throw new AequiError(
+        `SettlerMetaTxn address not configured for chain ${plan.chain.name}`,
+        ErrorCode.INVALID_CHAIN,
+        { metadata: { chain: plan.chain.key } }
+      )
+    }
+
+    const permit2 = plan.chain.settler?.permit2 ?? DEFAULT_PERMIT2
+    const tokenAddr = getAddress(inputToken.address)
+    const recipient = plan.recipient
+
+    // Per-message Permit2 nonce. Permit2 stores used nonces per (owner, word)
+    // so any unique uint256 works. We derive one from time + entropy to avoid
+    // collisions when the same user signs multiple in-flight swaps.
+    const nowSeconds = BigInt(Math.floor(Date.now() / 1000))
+    const nonce = (nowSeconds << 64n) | (BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)) & ((1n << 64n) - 1n))
+    const deadline = nowSeconds + BigInt(Math.max(plan.deadlineSeconds, 60))
+
+    // First action: METATXN_TRANSFER_FROM(recipient=settler, PermitTransferFrom).
+    // recipient here is the *intermediate* — Settler holds the tokens to feed
+    // the subsequent swap actions. Final settlement is via slippage.recipient.
+    const permitTransferAction = this.encodeMetaTxnTransferFrom(
+      settlerAddress,
+      tokenAddr,
+      plan.quote.amountIn,
+      nonce,
+      deadline
+    )
+
+    const actionsBytes: Hex[] = [
+      this.concatActionCalldata(permitTransferAction),
+      ...swapActions.map((a) => this.concatActionCalldata(a)),
+    ]
+
+    const slippage = {
+      recipient,
+      buyToken: this.settleBuyToken(plan, outputToken),
+      minAmountOut: plan.amountOutMin,
+    } as const
+
+    // Calldata with sig=0x placeholder. The frontend re-encodes with the
+    // actual signature filled in (we pass `permit2.{slippage,actions,...}`
+    // so the frontend doesn't need to recompute anything).
+    const calldataPlaceholder = encodeFunctionData({
+      abi: SETTLER_META_TXN_ABI,
+      functionName: 'executeMetaTxn',
+      args: [slippage, actionsBytes, ZID_AEQUI, recipient, '0x'],
+    })
+
+    const typedData = this.buildPermit2TypedData({
+      chainId: plan.chain.id,
+      permit2Address: permit2,
+      token: tokenAddr,
+      amount: plan.quote.amountIn,
+      spender: settlerMetaTxn,
+      nonce,
+      deadline,
+      slippage,
+      actionsBytes,
+    })
+
+    return {
+      kind: 'settler-permit2',
+      to: settlerMetaTxn,
+      data: calldataPlaceholder,
+      value: 0n, // Permit2 mode is ERC20-only
+      settler: settlerMetaTxn,
+      permit2: {
+        typedData,
+        slippage,
+        actions: actionsBytes,
+        msgSender: recipient,
+        zid: ZID_AEQUI,
+      },
+    }
+  }
+
+  private encodeMetaTxnTransferFrom(
+    recipient: Address,
+    token: Address,
+    amount: bigint,
+    nonce: bigint,
+    deadline: bigint
+  ): SettlerAction {
+    // METATXN_TRANSFER_FROM(address recipient, ISignatureTransfer.PermitTransferFrom permit)
+    // PermitTransferFrom struct:
+    //   TokenPermissions permitted { token, amount }
+    //   uint256 nonce
+    //   uint256 deadline
+    const data = encodeAbiParameters(
+      [
+        { type: 'address' }, // recipient
+        {
+          type: 'tuple',
+          components: [
+            {
+              type: 'tuple',
+              name: 'permitted',
+              components: [
+                { name: 'token', type: 'address' },
+                { name: 'amount', type: 'uint256' },
+              ],
+            },
+            { name: 'nonce', type: 'uint256' },
+            { name: 'deadline', type: 'uint256' },
+          ],
+        },
+      ],
+      [
+        recipient,
+        {
+          permitted: { token, amount },
+          nonce,
+          deadline,
+        } as never,
+      ]
+    )
+    return {
+      selector: SETTLER_ACTION_SELECTORS.METATXN_TRANSFER_FROM,
+      data,
+      label: 'metatxn-transfer-from',
+    }
+  }
+
+  private buildPermit2TypedData(args: {
+    chainId: number
+    permit2Address: Address
+    token: Address
+    amount: bigint
+    spender: Address
+    nonce: bigint
+    deadline: bigint
+    slippage: { recipient: Address; buyToken: Address; minAmountOut: bigint }
+    actionsBytes: Hex[]
+  }): Permit2TypedData {
+    return {
+      domain: {
+        name: 'Permit2',
+        chainId: args.chainId,
+        verifyingContract: args.permit2Address,
+      },
+      // viem signTypedData accepts a `types` map. The order of nested types
+      // doesn't matter; viem hashes per EIP-712 spec.
+      types: {
+        PermitWitnessTransferFrom: [
+          { name: 'permitted', type: 'TokenPermissions' },
+          { name: 'spender', type: 'address' },
+          { name: 'nonce', type: 'uint256' },
+          { name: 'deadline', type: 'uint256' },
+          { name: 'witness', type: 'SlippageAndActions' },
+        ],
+        TokenPermissions: [
+          { name: 'token', type: 'address' },
+          { name: 'amount', type: 'uint256' },
+        ],
+        // Witness type MUST match Settler's SLIPPAGE_AND_ACTIONS_TYPE exactly:
+        //   "SlippageAndActions(address recipient,address buyToken,uint256 minAmountOut,bytes[] actions)"
+        SlippageAndActions: [
+          { name: 'recipient', type: 'address' },
+          { name: 'buyToken', type: 'address' },
+          { name: 'minAmountOut', type: 'uint256' },
+          { name: 'actions', type: 'bytes[]' },
+        ],
+      },
+      primaryType: 'PermitWitnessTransferFrom',
+      message: {
+        permitted: { token: args.token, amount: args.amount },
+        spender: args.spender,
+        nonce: args.nonce,
+        deadline: args.deadline,
+        witness: {
+          recipient: args.slippage.recipient,
+          buyToken: args.slippage.buyToken,
+          minAmountOut: args.slippage.minAmountOut,
+          actions: args.actionsBytes,
+        },
+      },
     }
   }
 

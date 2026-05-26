@@ -16,6 +16,32 @@ import type { ChainConfig, PriceQuote } from './types'
 
 export type TokenFlow = 'allowance-holder' | 'permit2'
 
+/**
+ * EIP-712 typed data payload returned by SettlerBackend for Permit2 mode.
+ * Frontend feeds this directly into wagmi/viem `signTypedData`.
+ */
+export interface Permit2TypedData {
+  readonly domain: {
+    readonly name: string
+    readonly chainId: number
+    readonly verifyingContract: Address
+  }
+  readonly types: Record<string, Array<{ name: string; type: string }>>
+  readonly primaryType: 'PermitWitnessTransferFrom'
+  readonly message: {
+    readonly permitted: { token: Address; amount: bigint }
+    readonly spender: Address
+    readonly nonce: bigint
+    readonly deadline: bigint
+    readonly witness: {
+      recipient: Address
+      buyToken: Address
+      minAmountOut: bigint
+      actions: readonly Hex[]
+    }
+  }
+}
+
 export interface SwapPlan {
   /** The quote produced by `@aequi/pricing`. Carries route + amounts. */
   readonly quote: PriceQuote
@@ -50,14 +76,33 @@ export type SwapTransactionKind =
 
 export interface ExecutorBackendResult {
   readonly kind: SwapTransactionKind
-  /** Target contract for the transaction. AllowanceHolder for AH mode, Settler for Permit2. */
+  /** Target contract for the transaction. AllowanceHolder for AH mode, SettlerMetaTxn for Permit2. */
   readonly to: Address
-  /** Encoded calldata. */
+  /**
+   * Encoded calldata. For AllowanceHolder mode, this is final. For Permit2
+   * mode, this calldata has `sig: 0x` as a placeholder — the frontend must
+   * re-encode `executeMetaTxn(...)` with the wallet signature filled in.
+   * The metadata needed to do that is provided in `permit2`.
+   */
   readonly data: Hex
   /** Native value to attach. Non-zero only when useNativeInput. */
   readonly value: bigint
   /** Echo of the resolved Settler address (for debug / server-side simulation). */
   readonly settler: Address
+  /**
+   * Permit2 sign + finalize metadata. Present iff `kind === 'settler-permit2'`.
+   * Frontend uses this to:
+   *   1. Call `signTypedData(permit2.typedData)` to get a wallet signature.
+   *   2. Re-encode `executeMetaTxn(slippage, actions, zid, msgSender, sig)`
+   *      using the returned `actions`, `slippage`, `msgSender`, `zid`.
+   */
+  readonly permit2?: {
+    readonly typedData: Permit2TypedData
+    readonly slippage: { recipient: Address; buyToken: Address; minAmountOut: bigint }
+    readonly actions: readonly Hex[]
+    readonly msgSender: Address
+    readonly zid: Hex
+  }
 }
 
 export interface ExecutorBackend {

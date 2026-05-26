@@ -4,14 +4,14 @@ import { persist } from 'zustand/middleware'
 type RoutePreference = 'auto' | 'v2' | 'v3'
 type ApprovalMode = 'infinite' | 'exact'
 /**
- * Execution backend selector:
- *   - 'aequi-executor' (default): the existing AequiExecutor multicall path.
- *   - 'settler-allowance-holder': route swaps through 0x Settler in
- *     AllowanceHolder mode. Requires a one-time approve(AllowanceHolder).
- *   - 'settler-permit2': route through Settler with Permit2 signatures.
- *     (Stub — server returns 501 until Plan 3 follow-up wires it.)
+ * Execution backend selector — Aequi routes all swaps through 0x Settler.
+ *   - 'settler-allowance-holder' (default): one-time approve(AllowanceHolder),
+ *     then each swap is a single tx.
+ *   - 'settler-permit2': one-time approve(Permit2), then each swap requires
+ *     an EIP-712 signature in the wallet but is more gas-efficient and
+ *     allows arbitrary nonce ordering.
  */
-export type TokenFlow = 'aequi-executor' | 'settler-allowance-holder' | 'settler-permit2'
+export type TokenFlow = 'settler-allowance-holder' | 'settler-permit2'
 
 interface SettingsState {
   slippageBps: string
@@ -37,7 +37,7 @@ export const useSettingsStore = create<SettingsState>()(
       deadlineSeconds: '600',
       version: 'auto' as RoutePreference,
       approvalMode: 'exact' as ApprovalMode,
-      tokenFlow: 'aequi-executor' as TokenFlow,
+      tokenFlow: 'settler-allowance-holder' as TokenFlow,
       settingsModalOpen: false,
 
       setSlippageBps: (v) => set({ slippageBps: v }),

@@ -52,7 +52,7 @@ export interface ApproveParams {
   infinite?: boolean
 }
 
-export type TokenFlow = 'aequi-executor' | 'settler-allowance-holder' | 'settler-permit2'
+export type TokenFlow = 'settler-allowance-holder' | 'settler-permit2'
 
 export interface SwapParams {
   chain: ChainKey

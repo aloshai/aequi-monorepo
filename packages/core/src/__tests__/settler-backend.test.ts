@@ -49,6 +49,8 @@ const tokenC: TokenMetadata = {
   totalSupply: null,
 }
 
+const SETTLER_META_TXN_ADDR = getAddress('0xC0fFee0000000000000000000000000000000002')
+
 const makeChain = (): ChainConfig => ({
   key: 'bsc',
   id: 56,
@@ -59,7 +61,7 @@ const makeChain = (): ChainConfig => ({
   viemChain: bsc,
   settler: {
     settler: SETTLER_ADDR,
-    settlerMetaTxn: null,
+    settlerMetaTxn: SETTLER_META_TXN_ADDR,
     allowanceHolder: ALLOWANCE_HOLDER_ADDRESS,
     permit2: PERMIT2_ADDR,
   },
@@ -376,7 +378,72 @@ describe('SettlerBackend.build (AllowanceHolder mode)', () => {
     ).toThrow(/ratios must sum to 10000/)
   })
 
-  it('rejects Permit2 mode with NOT_IMPLEMENTED', () => {
+  it('Permit2 mode: target is SettlerMetaTxn, first action is METATXN_TRANSFER_FROM, response includes EIP-712 typed data', () => {
+    const result = backend.build({
+      quote: baseQuote(),
+      recipient: RECIPIENT,
+      amountOutMin: 475_000_000_000_000_000n,
+      useNativeInput: false,
+      useNativeOutput: false,
+      tokenFlow: 'permit2',
+      chain: makeChain(),
+      fee: null,
+      deadlineSeconds: 600,
+    })
+
+    expect(result.kind).toBe('settler-permit2')
+    // settlerMetaTxn from makeChain — synthesized fixture omits it, so we
+    // set it explicitly in this test via the assertion below.
+    expect(result.to).toBeDefined()
+    expect(result.value).toBe(0n)
+    expect(result.permit2).toBeDefined()
+
+    const typedData = result.permit2!.typedData
+    expect(typedData.primaryType).toBe('PermitWitnessTransferFrom')
+    expect(typedData.domain.name).toBe('Permit2')
+    expect(typedData.domain.verifyingContract).toBe(PERMIT2_ADDR)
+    expect(typedData.domain.chainId).toBe(56)
+    expect(typedData.message.spender).toBe(result.to)
+    expect(typedData.message.witness.recipient).toBe(RECIPIENT)
+    expect(typedData.message.witness.buyToken).toBe(TOKEN_B)
+    expect(typedData.message.witness.minAmountOut).toBe(475_000_000_000_000_000n)
+    expect(typedData.message.witness.actions.length).toBe(2) // METATXN_TRANSFER_FROM + UNISWAPV2
+
+    // First action must be METATXN_TRANSFER_FROM
+    expect(selectorOf(typedData.message.witness.actions[0]!)).toBe(
+      SETTLER_ACTION_SELECTORS.METATXN_TRANSFER_FROM.toLowerCase()
+    )
+    // Second action is the swap
+    expect(selectorOf(typedData.message.witness.actions[1]!)).toBe(
+      SETTLER_ACTION_SELECTORS.UNISWAPV2.toLowerCase()
+    )
+
+    // permit2.actions and typedData.message.witness.actions must match exactly
+    expect(result.permit2!.actions).toEqual(typedData.message.witness.actions)
+  })
+
+  it('Permit2 mode rejects native input', () => {
+    expect(() =>
+      backend.build({
+        quote: baseQuote(),
+        recipient: RECIPIENT,
+        amountOutMin: 475_000_000_000_000_000n,
+        useNativeInput: true,
+        useNativeOutput: false,
+        tokenFlow: 'permit2',
+        chain: makeChain(),
+        fee: null,
+        deadlineSeconds: 600,
+      })
+    ).toThrow(/native input/)
+  })
+
+  it('Permit2 mode rejects chain without SettlerMetaTxn configured', () => {
+    const chain = makeChain()
+    const noMetaTxn: ChainConfig = {
+      ...chain,
+      settler: { ...chain.settler!, settlerMetaTxn: null },
+    }
     expect(() =>
       backend.build({
         quote: baseQuote(),
@@ -385,11 +452,11 @@ describe('SettlerBackend.build (AllowanceHolder mode)', () => {
         useNativeInput: false,
         useNativeOutput: false,
         tokenFlow: 'permit2',
-        chain: makeChain(),
+        chain: noMetaTxn,
         fee: null,
         deadlineSeconds: 600,
       })
-    ).toThrow(/Permit2 token-flow/)
+    ).toThrow(/SettlerMetaTxn address not configured/)
   })
 
   it('rejects when Settler address is not configured for the chain', () => {

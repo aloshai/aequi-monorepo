@@ -39,11 +39,8 @@ const DEFAULTS = {
     rateLimitMax: 120,
     rateLimitWindow: '1 minute',
   },
-  executor: {
-    interhopBufferBps: 10,
+  swap: {
     quoteTtlSeconds: 15,
-    bscAddress: '0x03cbBc27784c64FC4A6f11eFe8D1C3b4Dee204EA' as Address,
-    incentivAddress: '0xD48074f8971E6E7FD0981a710FA7Fe5d0baA64ae' as Address,
   },
   dex: {
     uniswapV2Factory: '0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f' as Address,
@@ -106,14 +103,8 @@ export const appConfig = {
     uniswapV2Factory: parseAddressWithFallback(process.env.UNISWAP_V2_FACTORY, DEFAULTS.dex.uniswapV2Factory),
     uniswapV2Router: parseAddressWithFallback(process.env.UNISWAP_V2_ROUTER, DEFAULTS.dex.uniswapV2Router),
   },
-  executor: {
-    eth: parseAddressOrNull(process.env.AEQUI_EXECUTOR_ETH),
-    bsc: parseAddressOrNull(process.env.AEQUI_EXECUTOR_BSC) ?? DEFAULTS.executor.bscAddress,
-    incentiv: parseAddressOrNull(process.env.AEQUI_EXECUTOR_INCENTIV) ?? DEFAULTS.executor.incentivAddress,
-    interhopBufferBps: parseIntWithDefault(process.env.EXECUTOR_INTERHOP_BUFFER_BPS, DEFAULTS.executor.interhopBufferBps, 0),
-  },
   swap: {
-    quoteTtlSeconds: parseIntWithDefault(process.env.SWAP_QUOTE_TTL_SECONDS, DEFAULTS.executor.quoteTtlSeconds, 1),
+    quoteTtlSeconds: parseIntWithDefault(process.env.SWAP_QUOTE_TTL_SECONDS, DEFAULTS.swap.quoteTtlSeconds, 1),
   },
   routing: {
     maxHopDepth: Math.min(parseIntWithDefault(process.env.MAX_HOP_DEPTH, 2, 1), 4),

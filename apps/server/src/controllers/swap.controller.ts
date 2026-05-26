@@ -11,7 +11,7 @@ import { normalizeAddress } from '../utils/trading'
 import { formatAmountFromUnits, parseAmountToUnits } from '../utils/units'
 import { decodeRevertReason } from '../utils/revert-decoder'
 import { computeRecommendedSlippage } from '../services/quote/quote-service'
-import type { SwapTransaction } from '@aequi/core'
+import type { Permit2TypedData, SwapTransactionKind } from '@aequi/core'
 
 const COMMON_BALANCE_BASE_SLOTS = [0n, 2n, 3n, 51n, 101n]
 
@@ -147,53 +147,61 @@ export async function handleSwap(deps: AppDeps, request: FastifyRequest, reply: 
 
   const { quote, amountOutMin, tokenOut, slippageBps: boundedSlippage } = quoteResult
 
-  const tokenFlow = parsed.data.tokenFlow ?? 'aequi-executor'
+  const tokenFlow = parsed.data.tokenFlow ?? 'settler-allowance-holder'
+  void boundedSlippage // bound is encoded into amountOutMin by quote-service
 
-  let transaction: SwapTransaction
+  interface SettlerTransaction {
+    kind: SwapTransactionKind
+    dexId: string
+    router: Address
+    spender: Address
+    amountIn: bigint
+    amountOut: bigint
+    amountOutMinimum: bigint
+    deadline: number
+    call: { to: Address; data: Hex; value: bigint }
+    permit2?: {
+      typedData: Permit2TypedData
+      slippage: { recipient: Address; buyToken: Address; minAmountOut: bigint }
+      actions: readonly Hex[]
+      msgSender: Address
+      zid: Hex
+    }
+  }
+
+  let transaction: SettlerTransaction
   try {
-    if (tokenFlow === 'settler-allowance-holder') {
-      const result = deps.settlerBackend.build({
-        quote,
-        amountOutMin,
-        recipient,
-        useNativeInput,
-        useNativeOutput,
-        tokenFlow: 'allowance-holder',
-        chain,
-        fee: appConfig.fee.bps > 0 && appConfig.fee.recipient
-          ? { bps: appConfig.fee.bps, recipient: appConfig.fee.recipient }
-          : null,
-        deadlineSeconds,
-      })
-      // Map ExecutorBackendResult onto the legacy SwapTransaction shape so
-      // the rest of the controller (simulation, response) keeps working.
-      // executor=null tells the frontend to skip multicall unpacking.
-      transaction = {
-        kind: result.kind,
-        dexId: 'settler',
-        router: result.settler,
-        spender: result.to, // AllowanceHolder
-        amountIn: quote.amountIn,
-        amountOut: quote.amountOut,
-        amountOutMinimum: amountOutMin,
-        deadline: Math.floor(Date.now() / 1000) + deadlineSeconds,
-        calls: [
-          { target: result.to, allowFailure: false, callData: result.data, value: result.value },
-        ],
-        call: { to: result.to, data: result.data, value: result.value },
-        executor: { pulls: [], approvals: [], calls: [], tokensToFlush: [] },
-      }
-    } else if (tokenFlow === 'settler-permit2') {
-      reply.status(501)
-      return {
-        error: 'not_implemented',
-        message: 'settler-permit2 token flow is not yet wired in the server. Use settler-allowance-holder or aequi-executor.',
-      }
-    } else {
-      transaction = deps.swapBuilder.build(chain, {
-        quote, amountOutMin, recipient, slippageBps: boundedSlippage,
-        deadlineSeconds, useNativeInput, useNativeOutput,
-      })
+    const result = deps.settlerBackend.build({
+      quote,
+      amountOutMin,
+      recipient,
+      useNativeInput,
+      useNativeOutput,
+      tokenFlow: tokenFlow === 'settler-permit2' ? 'permit2' : 'allowance-holder',
+      chain,
+      fee: appConfig.fee.bps > 0 && appConfig.fee.recipient
+        ? { bps: appConfig.fee.bps, recipient: appConfig.fee.recipient }
+        : null,
+      deadlineSeconds,
+    })
+
+    transaction = {
+      kind: result.kind,
+      dexId: 'settler',
+      router: result.settler,
+      // For AllowanceHolder mode, spender is AllowanceHolder. For Permit2,
+      // there is no traditional ERC20 approval — frontend signs instead.
+      // We still set spender = Permit2 canonical address so the frontend's
+      // allowance check correctly verifies a one-time Permit2 approval.
+      spender: result.kind === 'settler-permit2'
+        ? chain.settler!.permit2
+        : result.to,
+      amountIn: quote.amountIn,
+      amountOut: quote.amountOut,
+      amountOutMinimum: amountOutMin,
+      deadline: Math.floor(Date.now() / 1000) + deadlineSeconds,
+      call: { to: result.to, data: result.data, value: result.value },
+      permit2: result.permit2,
     }
   } catch (error) {
     reply.status(400)
@@ -205,13 +213,18 @@ export async function handleSwap(deps: AppDeps, request: FastifyRequest, reply: 
   let estimatedGas: bigint | undefined
   let simulationPassed = false
 
+  // Permit2 mode: the calldata is a placeholder (sig=0x) until the user signs.
+  // Server-side eth_call would fail at signature validation, so we skip
+  // simulation for Permit2 mode. The user's wallet will simulate before broadcast.
+  const canSimulate = transaction.kind !== 'settler-permit2'
+
   try {
     const client = await deps.chainClientProvider.getClient(chain)
     const latestBlock = await client.getBlock()
     latestBlockNumber = latestBlock.number ?? null
     latestBlockTimestamp = latestBlock.timestamp ?? null
 
-    if (transaction.call) {
+    if (transaction.call && canSimulate) {
       const stateOverride = buildSimulationOverrides(
         recipient, useNativeInput ? null : effectiveTokenA,
         transaction.spender, transaction.amountIn,
@@ -243,8 +256,8 @@ export async function handleSwap(deps: AppDeps, request: FastifyRequest, reply: 
         estimatedGas = (estimatedGas * 120n) / 100n
       } catch {
         if (simulationPassed) {
-          const callCount = transaction.executor?.calls.length ?? 1
-          estimatedGas = BigInt(200_000 + callCount * 200_000)
+          // Generous fallback: V2/V3 multi-hop swaps typically use 250–400k gas.
+          estimatedGas = BigInt(400_000)
         }
       }
     }
@@ -283,37 +296,37 @@ export async function handleSwap(deps: AppDeps, request: FastifyRequest, reply: 
       amountOut: transaction.amountOut.toString(),
       amountOutMinimum: transaction.amountOutMinimum.toString(),
       deadline: transaction.deadline,
-      calls: transaction.calls.map((call) => ({
-        target: call.target,
-        allowFailure: call.allowFailure,
-        callData: call.callData,
-        value: (call.value ?? 0n).toString(),
-      })),
-      call: transaction.call
+      call: {
+        to: transaction.call.to,
+        data: transaction.call.data,
+        value: transaction.call.value.toString(),
+      },
+      permit2: transaction.permit2
         ? {
-            to: transaction.call.to,
-            data: transaction.call.data,
-            value: transaction.call.value.toString(),
-          }
-        : null,
-      executor: transaction.executor
-        ? {
-            pulls: transaction.executor.pulls.map((pull) => ({
-              token: pull.token,
-              amount: pull.amount.toString(),
-            })),
-            approvals: transaction.executor.approvals.map((approval) => ({
-              token: approval.token,
-              spender: approval.spender,
-              amount: approval.amount.toString(),
-              revokeAfter: approval.revokeAfter,
-            })),
-            calls: transaction.executor.calls.map((call) => ({
-              target: call.target,
-              value: call.value.toString(),
-              data: call.data,
-            })),
-            tokensToFlush: transaction.executor.tokensToFlush,
+            typedData: {
+              ...transaction.permit2.typedData,
+              message: {
+                ...transaction.permit2.typedData.message,
+                permitted: {
+                  token: transaction.permit2.typedData.message.permitted.token,
+                  amount: transaction.permit2.typedData.message.permitted.amount.toString(),
+                },
+                nonce: transaction.permit2.typedData.message.nonce.toString(),
+                deadline: transaction.permit2.typedData.message.deadline.toString(),
+                witness: {
+                  ...transaction.permit2.typedData.message.witness,
+                  minAmountOut: transaction.permit2.typedData.message.witness.minAmountOut.toString(),
+                },
+              },
+            },
+            slippage: {
+              recipient: transaction.permit2.slippage.recipient,
+              buyToken: transaction.permit2.slippage.buyToken,
+              minAmountOut: transaction.permit2.slippage.minAmountOut.toString(),
+            },
+            actions: transaction.permit2.actions,
+            msgSender: transaction.permit2.msgSender,
+            zid: transaction.permit2.zid,
           }
         : null,
       estimatedGas: estimatedGas?.toString(),

@@ -1,6 +1,9 @@
 import { useCallback } from 'react'
-import { useSendTransaction } from 'wagmi'
+import { useSendTransaction, useSignTypedData } from 'wagmi'
 import { waitForTransactionReceipt, estimateFeesPerGas } from 'wagmi/actions'
+import { encodeFunctionData } from 'viem'
+import type { Hex } from 'viem'
+import { SETTLER_META_TXN_ABI } from '@aequi/core'
 import { useSwapStore } from '../store/use-swap-store'
 import { useSettingsStore } from '../store/use-settings-store'
 import { useUiStore } from '../store/use-ui-store'
@@ -12,7 +15,7 @@ import {
 import { resolveApiErrorMessage, resolveApiErrorPayload } from '../lib/http'
 import { parseSwapError } from '../utils/swap-errors'
 import { wagmiConfig, CHAIN_BY_KEY } from '../lib/wagmi'
-import type { ChainKey, AllowanceResponse } from '../types/api'
+import type { ChainKey, AllowanceResponse, Permit2PayloadResponse } from '../types/api'
 
 type SupportedChainId = typeof CHAIN_BY_KEY.ethereum.id | typeof CHAIN_BY_KEY.bsc.id | typeof CHAIN_BY_KEY.incentiv.id
 
@@ -44,6 +47,7 @@ export function useSwapExecution(
   chainMismatch: boolean,
 ) {
   const { sendTransactionAsync } = useSendTransaction()
+  const { signTypedDataAsync } = useSignTypedData()
 
   const refreshAllowance = useCallback(
     async (token: string, spender: string, options?: { silent?: boolean }): Promise<AllowanceResponse | null> => {
@@ -209,22 +213,76 @@ export function useSwapExecution(
       store.setSwapExecutionLoading(true)
       if (!preparedSwap.transaction.call) throw new Error('Missing transaction payload')
 
-      // Use server-provided gas estimate, or compute a generous fallback
-      // based on executor call count so wallets don't reject the tx.
-      let gas: bigint | undefined
-      if (preparedSwap.transaction.estimatedGas) {
-        gas = BigInt(preparedSwap.transaction.estimatedGas)
-      } else {
-        const callCount = preparedSwap.transaction.executor?.calls.length ?? 1
-        gas = BigInt(200_000 + callCount * 200_000)
-      }
+      // Use server-provided gas estimate, or fall back to a generous
+      // multi-hop V2/V3 swap estimate so wallets don't reject the tx.
+      const gas: bigint = preparedSwap.transaction.estimatedGas
+        ? BigInt(preparedSwap.transaction.estimatedGas)
+        : 400_000n
 
       const swapFeeParams = await getFeeParams(selectedChainId)
+
+      // Permit2 mode: sign EIP-712 typed data and re-encode executeMetaTxn
+      // with the wallet signature filled in. AllowanceHolder mode uses the
+      // server-supplied calldata verbatim.
+      let txTo = preparedSwap.transaction.call.to as `0x${string}`
+      let txData = preparedSwap.transaction.call.data as `0x${string}`
+      const txValue = BigInt(preparedSwap.transaction.call.value ?? '0')
+
+      if (preparedSwap.transaction.kind === 'settler-permit2') {
+        const permit2: Permit2PayloadResponse | null = preparedSwap.transaction.permit2
+        if (!permit2) throw new Error('Permit2 payload missing for settler-permit2 swap')
+
+        // Re-hydrate string-encoded bigints back to bigints before signing.
+        // The wallet expects the same JS types it would in a native dapp.
+        const typedDataForSigning = {
+          domain: permit2.typedData.domain,
+          types: permit2.typedData.types,
+          primaryType: permit2.typedData.primaryType,
+          message: {
+            permitted: {
+              token: permit2.typedData.message.permitted.token as `0x${string}`,
+              amount: BigInt(permit2.typedData.message.permitted.amount),
+            },
+            spender: permit2.typedData.message.spender as `0x${string}`,
+            nonce: BigInt(permit2.typedData.message.nonce),
+            deadline: BigInt(permit2.typedData.message.deadline),
+            witness: {
+              recipient: permit2.typedData.message.witness.recipient as `0x${string}`,
+              buyToken: permit2.typedData.message.witness.buyToken as `0x${string}`,
+              minAmountOut: BigInt(permit2.typedData.message.witness.minAmountOut),
+              actions: permit2.typedData.message.witness.actions as Hex[],
+            },
+          },
+        } as const
+
+        const sig = await signTypedDataAsync(typedDataForSigning as never)
+
+        // Re-encode executeMetaTxn with the actual signature in place of the
+        // 0x placeholder. We use the SETTLER_META_TXN_ABI from @aequi/core so
+        // both sides agree on the function shape.
+        txData = encodeFunctionData({
+          abi: SETTLER_META_TXN_ABI,
+          functionName: 'executeMetaTxn',
+          args: [
+            {
+              recipient: permit2.slippage.recipient as `0x${string}`,
+              buyToken: permit2.slippage.buyToken as `0x${string}`,
+              minAmountOut: BigInt(permit2.slippage.minAmountOut),
+            },
+            permit2.actions as Hex[],
+            permit2.zid as `0x${string}`,
+            permit2.msgSender as `0x${string}`,
+            sig,
+          ],
+        })
+        txTo = preparedSwap.transaction.call.to as `0x${string}`
+      }
+
       const sTx = await sendTransactionAsync({
         chainId: selectedChainId,
-        to: preparedSwap.transaction.call.to as `0x${string}`,
-        data: preparedSwap.transaction.call.data as `0x${string}`,
-        value: BigInt(preparedSwap.transaction.call.value ?? '0'),
+        to: txTo,
+        data: txData,
+        value: txValue,
         gas,
         ...swapFeeParams,
       })
@@ -269,7 +327,7 @@ export function useSwapExecution(
       store.setApprovalLoading(null)
       store.setSwapExecutionLoading(false)
     }
-  }, [refreshAllowance, sendTransactionAsync, ensureAllowanceSynced])
+  }, [refreshAllowance, sendTransactionAsync, signTypedDataAsync, ensureAllowanceSynced])
 
   return { prepareSwap, confirmSwap }
 }

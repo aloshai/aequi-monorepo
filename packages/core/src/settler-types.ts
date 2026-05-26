@@ -26,6 +26,16 @@ export const SETTLER_BPS_FULL = 10_000n as const
  */
 export const SETTLER_ACTION_SELECTORS = {
   /**
+   * METATXN_TRANSFER_FROM(recipient, PermitTransferFrom)
+   * — VIP action: consumes the Permit2 signature passed to `executeMetaTxn`
+   * and pulls `permit.permitted.amount` of `permit.permitted.token` from the
+   * msgSender to `recipient`. Used as the first action of a Permit2 sequence.
+   */
+  METATXN_TRANSFER_FROM: toFunctionSelector(
+    'METATXN_TRANSFER_FROM(address,((address,uint256),uint256,uint256))'
+  ),
+
+  /**
    * UNISWAPV2(recipient, sellToken, bps, pool, swapInfo, amountOutMin)
    * — V2 swap (and all V2 forks: PancakeSwap V2, Sushiswap V2, etc.).
    * `swapInfo` packs (zeroForOne, feeBps) — see Settler source for exact layout.

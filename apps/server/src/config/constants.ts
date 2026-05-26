@@ -161,12 +161,4 @@ export const INTERMEDIATE_TOKEN_ADDRESSES: Record<ChainKey, Address[]> = Object.
   ]),
 ) as Record<ChainKey, Address[]>
 
-export const AEQUI_EXECUTOR_ADDRESS: Record<ChainKey, Address | null> = {
-  ethereum: appConfig.executor.eth,
-  bsc: appConfig.executor.bsc,
-  incentiv: appConfig.executor.incentiv,
-}
-
-export const EXECUTOR_INTERHOP_BUFFER_BPS = appConfig.executor.interhopBufferBps
-
 export const SWAP_QUOTE_TTL_SECONDS = appConfig.swap.quoteTtlSeconds
