@@ -71,7 +71,7 @@ Uniswap V2/V3, PancakeSwap V2/V3, Incentiv V3. Registered into a global registry
 
 ### Contracts (`packages/contracts`)
 
-Solidity 0.8.28 (Hardhat, optimizer 200 runs). **AequiExecutor**: stateless atomic multicall (pull tokens -> approve -> execute -> revoke -> flush). **AequiLens**: batch pool data queries. Deploy with Hardhat Ignition.
+Solidity 0.8.28 (Hardhat, optimizer 200 runs). **AequiExecutor**: stateless atomic multicall (pull tokens -> approve -> execute -> revoke -> flush). Use `executeWithRecipient` when output must pass through the executor (required for fee collection) instead of being sent straight to the user. **AequiLens**: batch pool data queries. Deploy with Hardhat Ignition.
 
 ## Code Conventions
 
@@ -84,10 +84,34 @@ Solidity 0.8.28 (Hardhat, optimizer 200 runs). **AequiExecutor**: stateless atom
 - Route preference: `'auto' | 'v2' | 'v3'` — auto prefers V3, falls back to V2.
 - Fastify logger is disabled when `NODE_ENV=test`.
 
+## Attribution (load-bearing — do not strip)
+
+Apache 2.0 + Trademark Policy require visible attribution. Don't remove these in refactors:
+- `apps/web/src/components/PoweredBy.tsx` — must remain rendered in the UI.
+- Server responses must include the `X-Powered-By: Aequi` header (set in default Fastify config).
+- Keep the root `NOTICE` file in any distribution.
+
 ## Environment
 
 Copy `.env.example` to `.env`. Key requirements:
-- At least one RPC URL (`RPC_URL_ETH` or `BSC_RPC_URL`) must be set for server startup.
+- At least one RPC URL (`RPC_URL_ETH`, `BSC_RPC_URL`, or `INCENTIV_RPC_URL`) must be set for server startup. Each accepts a comma-separated list; `*_FALLBACK` variants supported.
 - `AEQUI_EXECUTOR_ETH` has **no default** — must be configured for Ethereum swaps.
 - `AEQUI_EXECUTOR_BSC` defaults to `0x03cbBc27784c64FC4A6f11eFe8D1C3b4Dee204EA`.
+- `AEQUI_EXECUTOR_INCENTIV` defaults to `0xD48074f8971E6E7FD0981a710FA7Fe5d0baA64ae`.
+- Routing knobs: `MAX_HOP_DEPTH` (default 2, max 4), `ENABLE_SPLIT_ROUTING`, `MAX_SPLIT_LEGS`, `EXECUTOR_INTERHOP_BUFFER_BPS`, `SWAP_QUOTE_TTL_SECONDS`.
+- `FEE_BPS` (default 30) — fee charged on swap output; requires executor-routed output (`executeWithRecipient`).
 - `VITE_API_BASE_URL` defaults to `http://localhost:3000` for the web app.
+
+## 0x Settler migration (in progress)
+
+The AequiExecutor is being replaced by 0x Settler. See:
+- Spec: `docs/superpowers/specs/2026-05-26-settler-migration-design.md`
+- Plan 1 (this branch `feat/settler-migration`): `docs/superpowers/plans/2026-05-26-plan-1-settler-infrastructure.md` + matching `-NOTES.md`
+
+Current state on this branch:
+- 0x Settler vendored at `packages/contracts/lib/0x-settler/` (MIT-licensed submodule from upstream `0xProject/0x-settler`). Aequi remains Apache 2.0.
+- Windows MAX_PATH prevents recursive submodule init below ~10 levels; deepest Settler test deps (e.g. v4-periphery → openzeppelin → forge-std → ds-test) are not cloned. `forge build` therefore does NOT work for the full Settler tree on Windows; Settler is used as a read-only source reference for action ABI.
+- `appConfig.settler` exposes `allowanceHolder` + `permit2` (constants across chains) and a `byChain` map of `{ settler, settlerMetaTxn }`. The `byChain` addresses are nullable; canonical ETH/BSC values are TODO in Plan 3, Incentiv stays null until a Settler fork is deployed there.
+- AequiExecutor + its ABI + the old `SwapBuilder` are still live and unchanged — they get removed in Plan 2 when `SettlerBackend` produces valid calldata.
+
+Env additions on this branch: `SETTLER_ETH`, `SETTLER_META_TXN_ETH`, `SETTLER_BSC`, `SETTLER_META_TXN_BSC`, `SETTLER_INCENTIV`, `SETTLER_META_TXN_INCENTIV` (all optional overrides).
