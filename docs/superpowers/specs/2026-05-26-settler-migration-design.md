@@ -12,7 +12,7 @@ AequiExecutor is a custom, generic multicall contract: every DEX integration mus
 - Adds Uniswap V4 support as part of the migration.
 - Establishes a foundation for future DEX additions without contract changes.
 
-The migration is licensed under **AGPL-3.0**; the user has accepted relicensing implications.
+0x Settler is **MIT-licensed**, so vendoring it as a dependency does not impose copyleft obligations on Aequi — the project remains Apache-2.0. (An earlier assumption that Settler was AGPL turned out to be incorrect.)
 
 ## 2. Fixed Decisions
 
@@ -114,7 +114,7 @@ Key principles:
 | Action | File | Notes |
 |---|---|---|
 | Deleted | `contracts/AequiExecutor.sol` | + ignition module + tests. |
-| New | `lib/0x-settler/` | Git submodule, pinned to a specific upstream tag. We track 0x release tags. |
+| New | `lib/0x-settler/` | Git submodule, pinned to a specific upstream tag (MIT-licensed; vendored as a dependency). We track 0x release tags. |
 | New | `ignition/modules/SettlerIncentiv.js` | Deploys Settler + AllowanceHolder on Incentiv only. Other chains use 0x's deployments. |
 | New | `foundry.toml` | Settler is a Foundry project; coexists with Hardhat. |
 | Kept | `contracts/AequiLens.sol` | Unchanged. |
