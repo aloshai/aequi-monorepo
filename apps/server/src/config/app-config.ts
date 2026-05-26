@@ -49,6 +49,20 @@ const DEFAULTS = {
     uniswapV2Factory: '0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f' as Address,
     uniswapV2Router: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D' as Address,
   },
+  // 0x Settler infrastructure. AllowanceHolder + Permit2 are identical across
+  // all EVM chains by deterministic deployment. Settler / SettlerMetaTxn
+  // addresses are per-chain CREATE2 deployments; the canonical 0x deployments
+  // for ETH + BSC are TODO (resolve from the deployer's tx history — see
+  // docs/superpowers/plans/2026-05-26-plan-1-settler-infrastructure-NOTES.md).
+  // Incentiv stays null until a Settler fork is deployed there.
+  settler: {
+    allowanceHolder: '0x0000000000001fF3684f28c67538d4D072C22734' as Address,
+    permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3' as Address,
+    ethSettler: null as Address | null, // TODO(plan-3): hardcode canonical ETH Settler
+    ethSettlerMetaTxn: null as Address | null, // TODO(plan-3): hardcode canonical ETH SettlerMetaTxn
+    bscSettler: null as Address | null, // TODO(plan-3): hardcode canonical BSC Settler
+    bscSettlerMetaTxn: null as Address | null, // TODO(plan-3): hardcode canonical BSC SettlerMetaTxn
+  },
 }
 
 const NODE_ENV = process.env.NODE_ENV ?? 'development'
@@ -95,6 +109,26 @@ export const appConfig = {
   },
   fee: {
     bps: parseIntWithDefault(process.env.FEE_BPS, 30, 0),
+  },
+  settler: {
+    allowanceHolder: getAddress(DEFAULTS.settler.allowanceHolder),
+    permit2: getAddress(DEFAULTS.settler.permit2),
+    byChain: {
+      ethereum: {
+        settler: parseAddressOrNull(process.env.SETTLER_ETH) ?? DEFAULTS.settler.ethSettler,
+        settlerMetaTxn: parseAddressOrNull(process.env.SETTLER_META_TXN_ETH) ?? DEFAULTS.settler.ethSettlerMetaTxn,
+      },
+      bsc: {
+        settler: parseAddressOrNull(process.env.SETTLER_BSC) ?? DEFAULTS.settler.bscSettler,
+        settlerMetaTxn: parseAddressOrNull(process.env.SETTLER_META_TXN_BSC) ?? DEFAULTS.settler.bscSettlerMetaTxn,
+      },
+      incentiv: {
+        // Settler is not deployed on Incentiv yet. Plan 1 deferred this work;
+        // see docs/superpowers/plans/2026-05-26-plan-1-settler-infrastructure-NOTES.md.
+        settler: parseAddressOrNull(process.env.SETTLER_INCENTIV),
+        settlerMetaTxn: parseAddressOrNull(process.env.SETTLER_META_TXN_INCENTIV),
+      },
+    },
   },
 } as const
 

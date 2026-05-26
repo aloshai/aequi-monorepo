@@ -27,11 +27,19 @@ const envSchema = z.object({
   UNISWAP_V2_FACTORY: z.string().optional(),
   UNISWAP_V2_ROUTER: z.string().optional(),
 
-  // Executor
+  // Executor (legacy AequiExecutor — removed in Plan 2 once SettlerBackend ships)
   AEQUI_EXECUTOR_ETH: z.string().optional(),
   AEQUI_EXECUTOR_BSC: z.string().optional(),
   AEQUI_EXECUTOR_INCENTIV: z.string().optional(),
   EXECUTOR_INTERHOP_BUFFER_BPS: z.coerce.number().int().min(0).default(10),
+
+  // 0x Settler infrastructure (overrides canonical / hardcoded defaults)
+  SETTLER_ETH: z.string().optional(),
+  SETTLER_META_TXN_ETH: z.string().optional(),
+  SETTLER_BSC: z.string().optional(),
+  SETTLER_META_TXN_BSC: z.string().optional(),
+  SETTLER_INCENTIV: z.string().optional(),
+  SETTLER_META_TXN_INCENTIV: z.string().optional(),
 
   // Swap
   SWAP_QUOTE_TTL_SECONDS: z.coerce.number().int().positive().default(15),

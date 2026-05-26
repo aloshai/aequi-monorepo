@@ -22,6 +22,13 @@ const incentivChain = defineChain({
     },
 })
 
+const buildSettlerAddresses = (key: ChainKey) => ({
+    settler: appConfig.settler.byChain[key].settler,
+    settlerMetaTxn: appConfig.settler.byChain[key].settlerMetaTxn,
+    allowanceHolder: appConfig.settler.allowanceHolder,
+    permit2: appConfig.settler.permit2,
+})
+
 export const CHAIN_CONFIGS: Record<ChainKey, ChainConfig> = {
     ethereum: {
         key: 'ethereum',
@@ -33,6 +40,7 @@ export const CHAIN_CONFIGS: Record<ChainKey, ChainConfig> = {
         fallbackRpcUrls: appConfig.rpc.ethereumFallback,
         disablePublicRpcRegistry: appConfig.rpc.ethereum.length > 0,
         viemChain: mainnet,
+        settler: buildSettlerAddresses('ethereum'),
         dexes: [
             {
                 id: 'uniswap-v2',
@@ -71,6 +79,7 @@ export const CHAIN_CONFIGS: Record<ChainKey, ChainConfig> = {
         fallbackRpcUrls: appConfig.rpc.bscFallback,
         disablePublicRpcRegistry: appConfig.rpc.bsc.length > 0,
         viemChain: bscChain,
+        settler: buildSettlerAddresses('bsc'),
         dexes: [
             {
                 id: 'pancake-v2',
@@ -122,6 +131,7 @@ export const CHAIN_CONFIGS: Record<ChainKey, ChainConfig> = {
         fallbackRpcUrls: appConfig.rpc.incentivFallback,
         disablePublicRpcRegistry: appConfig.rpc.incentiv.length > 0,
         viemChain: incentivChain,
+        settler: buildSettlerAddresses('incentiv'),
         dexes: [
             {
                 id: 'incentive-portal-v3',

@@ -18,6 +18,17 @@ export interface DexConfig {
   useRouter02?: boolean // For Uniswap V3 Router02 (different ABI without deadline in struct)
 }
 
+export interface SettlerChainAddresses {
+  /** Per-chain Settler in AllowanceHolder (taker-submitted) mode. null = not configured yet. */
+  settler: Address | null
+  /** Per-chain SettlerMetaTxn in Permit2 mode. null = not configured yet. */
+  settlerMetaTxn: Address | null
+  /** AllowanceHolder is identical across all chains (deterministic CREATE2). */
+  allowanceHolder: Address
+  /** Canonical Permit2, identical across all EVM chains. */
+  permit2: Address
+}
+
 export interface ChainConfig {
   key: ChainKey
   id: number
@@ -29,6 +40,7 @@ export interface ChainConfig {
   disablePublicRpcRegistry?: boolean
   viemChain: Chain
   dexes: DexConfig[]
+  settler?: SettlerChainAddresses
 }
 
 export interface TokenMetadata {
