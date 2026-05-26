@@ -1,5 +1,45 @@
 import type { Abi } from 'viem'
 
+/** AllowanceHolder.exec — the entrypoint for AllowanceHolder-mode Settler swaps. */
+export const ALLOWANCE_HOLDER_ABI = [
+  {
+    type: 'function',
+    name: 'exec',
+    stateMutability: 'payable',
+    inputs: [
+      { name: 'operator', type: 'address' },
+      { name: 'token', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+      { name: 'target', type: 'address' },
+      { name: 'data', type: 'bytes' },
+    ],
+    outputs: [{ name: 'result', type: 'bytes' }],
+  },
+] as const satisfies Abi
+
+/** Settler.execute — the action-dispatch entry point. */
+export const SETTLER_EXECUTE_ABI = [
+  {
+    type: 'function',
+    name: 'execute',
+    stateMutability: 'payable',
+    inputs: [
+      {
+        name: 'slippage',
+        type: 'tuple',
+        components: [
+          { name: 'recipient', type: 'address' },
+          { name: 'buyToken', type: 'address' },
+          { name: 'minAmountOut', type: 'uint256' },
+        ],
+      },
+      { name: 'actions', type: 'bytes[]' },
+      { name: 'zid', type: 'bytes32' },
+    ],
+    outputs: [{ type: 'bool' }],
+  },
+] as const satisfies Abi
+
 export const V2_ROUTER_ABI = [
   {
     type: 'function',
