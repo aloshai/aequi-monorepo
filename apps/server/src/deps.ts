@@ -1,6 +1,6 @@
 import { TokenService, PriceService, PoolDiscovery } from '@aequi/pricing'
 import { registerDefaultAdapters } from '@aequi/dex-adapters'
-import { SwapBuilder } from '@aequi/core'
+import { SettlerBackend, SwapBuilder } from '@aequi/core'
 import { appConfig } from './config/app-config'
 import {
   AEQUI_EXECUTOR_ADDRESS,
@@ -31,6 +31,13 @@ export interface AppDeps {
   quoteStore: QuoteStore
   allowanceService: AllowanceService
   swapBuilder: SwapBuilder
+  /**
+   * 0x Settler execution backend. Currently dormant — the swap controller
+   * still routes through `swapBuilder` (AequiExecutor). Plan 3 will switch
+   * the controller to dispatch on `tokenFlow` and use this for the
+   * allowance-holder + permit2 modes.
+   */
+  settlerBackend: SettlerBackend
   healthService: HealthService
 }
 
@@ -63,6 +70,9 @@ export function createDeps(): AppDeps {
     executorByChain: AEQUI_EXECUTOR_ADDRESS,
     interhopBufferBps: EXECUTOR_INTERHOP_BUFFER_BPS,
   })
+  const settlerBackend = new SettlerBackend({
+    interhopBufferBps: EXECUTOR_INTERHOP_BUFFER_BPS,
+  })
   const healthService = new HealthService()
 
   return {
@@ -76,6 +86,7 @@ export function createDeps(): AppDeps {
     quoteStore,
     allowanceService,
     swapBuilder,
+    settlerBackend,
     healthService,
   }
 }
