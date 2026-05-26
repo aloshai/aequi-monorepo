@@ -51,17 +51,33 @@ const DEFAULTS = {
   },
   // 0x Settler infrastructure. AllowanceHolder + Permit2 are identical across
   // all EVM chains by deterministic deployment. Settler / SettlerMetaTxn
-  // addresses are per-chain CREATE2 deployments; the canonical 0x deployments
-  // for ETH + BSC are TODO (resolve from the deployer's tx history — see
-  // docs/superpowers/plans/2026-05-26-plan-1-settler-infrastructure-NOTES.md).
+  // addresses are per-chain and *change* whenever 0x deploys a new Settler
+  // version on that chain. They are resolved by calling the 0x Deployer
+  // contract's `ownerOf(tokenId)` view (tokenId 2 = Settler / taker-submitted,
+  // tokenId 3 = SettlerMetaTxn). Do NOT use Deployer.next() — that returns the
+  // *predicted* CREATE2 address of the *next* deployment, which has no code
+  // until 0x actually deploys it.
+  //
+  // Deployer address (identical across chains): 0x00000000000004533Fe15556B1E086BB1A72cEae
+  //
+  // To re-resolve on demand:
+  //   const settlerAddr = await publicClient.readContract({
+  //     address: DEPLOYER,
+  //     abi: [{ type: 'function', name: 'ownerOf', stateMutability: 'view',
+  //             inputs: [{ type: 'uint256' }], outputs: [{ type: 'address' }] }],
+  //     functionName: 'ownerOf',
+  //     args: [2n],  // or 3n for MetaTxn
+  //   })
+  //
+  // Resolved 2026-05-26 against ethereum-rpc.publicnode.com + bsc-dataseed.binance.org.
   // Incentiv stays null until a Settler fork is deployed there.
   settler: {
     allowanceHolder: '0x0000000000001fF3684f28c67538d4D072C22734' as Address,
     permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3' as Address,
-    ethSettler: null as Address | null, // TODO(plan-3): hardcode canonical ETH Settler
-    ethSettlerMetaTxn: null as Address | null, // TODO(plan-3): hardcode canonical ETH SettlerMetaTxn
-    bscSettler: null as Address | null, // TODO(plan-3): hardcode canonical BSC Settler
-    bscSettlerMetaTxn: null as Address | null, // TODO(plan-3): hardcode canonical BSC SettlerMetaTxn
+    ethSettler: '0x7f54F05635d15Cde17A49502fEdB9D1803A3Be8A' as Address,
+    ethSettlerMetaTxn: '0x0476C2483f4c6AA4Dfb6EFA29815AB74d9C1e508' as Address,
+    bscSettler: '0xc2eff1F1cE35d395408A34Ad881dBCD978F40b89' as Address,
+    bscSettlerMetaTxn: '0xFffdb7DBAEaf3138B7cfc2328c21f9343C1f7faA' as Address,
   },
 }
 
