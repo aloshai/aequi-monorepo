@@ -16,6 +16,6 @@ export const addressOrNativeSchema = z.string().trim().refine(
   'Invalid address',
 )
 
-export const versionSchema = z.enum(['auto', 'v2', 'v3']).optional()
+export const versionSchema = z.enum(['auto', 'v2', 'v3', 'v4']).optional()
 
 export const boolStringSchema = z.enum(['true', 'false']).optional()

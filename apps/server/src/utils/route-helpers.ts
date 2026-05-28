@@ -16,7 +16,7 @@ export const resolveChain = (chainParam: string): ChainConfig => {
 export const resolveRoutePreference = (value?: string): RoutePreference => {
   if (!value) return 'auto'
   const normalized = value.toLowerCase()
-  if (normalized === 'v2' || normalized === 'v3') return normalized
+  if (normalized === 'v2' || normalized === 'v3' || normalized === 'v4') return normalized
   return 'auto'
 }
 

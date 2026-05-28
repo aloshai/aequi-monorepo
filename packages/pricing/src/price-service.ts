@@ -10,7 +10,7 @@ import { PoolDiscovery } from './pool-discovery'
 
 const resolveAllowedVersions = (preference: RoutePreference): RouteHopVersion[] => {
   if (preference === 'auto') {
-    return ['v3', 'v2']
+    return ['v4', 'v3', 'v2']
   }
   return [preference]
 }

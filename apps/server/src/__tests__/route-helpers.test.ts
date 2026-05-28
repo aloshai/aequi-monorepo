@@ -17,8 +17,13 @@ describe('resolveRoutePreference', () => {
     expect(resolveRoutePreference('V3')).toBe('v3')
   })
 
+  it('returns v4 for v4 input (case insensitive)', () => {
+    expect(resolveRoutePreference('v4')).toBe('v4')
+    expect(resolveRoutePreference('V4')).toBe('v4')
+  })
+
   it('returns auto for unknown values', () => {
-    expect(resolveRoutePreference('v4')).toBe('auto')
+    expect(resolveRoutePreference('v5')).toBe('auto')
     expect(resolveRoutePreference('random')).toBe('auto')
     expect(resolveRoutePreference('')).toBe('auto')
   })
