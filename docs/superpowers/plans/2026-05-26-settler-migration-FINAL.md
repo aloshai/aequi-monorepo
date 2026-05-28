@@ -17,6 +17,7 @@ All swaps route through 0x Settler. AequiExecutor is removed completely. Both `s
   - Permit2 mode: `SettlerMetaTxn.executeMetaTxn(slippage, actions, zid, msgSender, sig)` with EIP-712 typed-data witness `SlippageAndActions(recipient, buyToken, minAmountOut, actions)`
   - Single-hop + multi-hop V2 (Uniswap V2 / PancakeSwap V2 / V2 forks)
   - Single-hop + multi-hop V3 with Settler's enhanced 64-byte-per-hop path layout (forkId mapping: uniswap=0, pancake=1, sushiswap=2)
+  - **Uniswap V4** (hookless pools) — UNISWAPV4 action with custom fills packing + perfect-hash notes-table allocation; V4Quoter-based discovery probing standard (fee, tickSpacing) combos on ETH + BSC. Live V4 Quoter verified (WETH/USDC fee 500 returns real quotes).
   - Split routes with `bps` scaled relative to remaining input
   - Native input via `BASIC → WETH.deposit{value: amount}()`
   - Native output via `BASIC → WETH.withdraw(amount-injected-via-offset)`
@@ -85,7 +86,7 @@ Real-RPC fork sims (executed against `bsc-dataseed.binance.org` + `ethereum-rpc.
   1. Fork `0x-settler` upstream and add an Incentiv chain definition (`src/chains/Incentiv/{Common,TakerSubmitted,MetaTxn}.sol`).
   2. Run `BROADCAST=yes ./sh/deploy_new_chain.sh Incentiv` from a Linux/macOS host (Windows MAX_PATH breaks the deep submodule init).
   3. Update `appConfig.settler.byChain.incentiv.{settler,settlerMetaTxn}` with the deployed addresses.
-- **Uniswap V4** — not on this branch. Add a V4 adapter to `@aequi/dex-adapters` and a `UNISWAPV4` action encoder to `SettlerBackend` to enable.
+- **Uniswap V4 hooks** — only hookless pools (`hooks=0x0`) are supported. Hook-bearing pools require running the hook's logic to quote/execute correctly; out of scope. Multi-pool V4 batching within a single fills payload is also not implemented (each V4 hop is a single-pool fill).
 
 ### Required follow-ups before flipping production traffic
 
