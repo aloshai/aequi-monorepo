@@ -147,8 +147,19 @@ export async function handleSwap(deps: AppDeps, request: FastifyRequest, reply: 
 
   const { quote, amountOutMin, tokenOut, slippageBps: boundedSlippage } = quoteResult
 
-  const tokenFlow = parsed.data.tokenFlow ?? 'settler-allowance-holder'
+  const requestedTokenFlow = parsed.data.tokenFlow ?? 'settler-allowance-holder'
   void boundedSlippage // bound is encoded into amountOutMin by quote-service
+
+  // Permit2 cannot carry native input: PermitWitnessTransferFrom signs an
+  // ERC20 transfer, and native ETH/BNB is not an ERC20. Native input also
+  // needs no approval at all (the user attaches msg.value), so Permit2's
+  // gasless-approval benefit is moot. Transparently fall back to
+  // AllowanceHolder, which gives the same single-tx UX.
+  const tokenFlow =
+    requestedTokenFlow === 'settler-permit2' && useNativeInput
+      ? 'settler-allowance-holder'
+      : requestedTokenFlow
+  const tokenFlowDowngraded = tokenFlow !== requestedTokenFlow
 
   interface SettlerTransaction {
     kind: SwapTransactionKind
@@ -284,6 +295,11 @@ export async function handleSwap(deps: AppDeps, request: FastifyRequest, reply: 
     quoteExpiresAt,
     quoteValidSeconds: SWAP_QUOTE_TTL_SECONDS,
     tokenFlow,
+    requestedTokenFlow,
+    // True when the server overrode the requested flow (Permit2 → AllowanceHolder
+    // for native input). The frontend should reflect AllowanceHolder UX (no
+    // signature prompt) when this is set.
+    tokenFlowDowngraded,
     quoteBlockNumber: latestBlockNumber ? latestBlockNumber.toString() : null,
     quoteBlockTimestamp: latestBlockTimestamp ? Number(latestBlockTimestamp) : null,
     simulationPassed,
