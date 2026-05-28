@@ -346,6 +346,44 @@ export class PoolDiscovery {
       })
     }
 
+    // V4 path: probe known (fee, tickSpacing) combinations against the V4
+    // Quoter. Unlike V2/V3 there's no factory.getPair to enumerate pools —
+    // each PoolKey is implicit. The quoter reverts cleanly for pools that
+    // don't exist or have no liquidity, so we just try each combination.
+    if (allowedVersions.includes('v4')) {
+      const v4Dexes = chain.dexes.filter((d) => d.version === 'v4' && d.v4TickSpacings)
+      const v4Probes: Promise<PriceQuote | null>[] = []
+      for (const dex of v4Dexes) {
+        const adapter = dexRegistry.get(dex.protocol, 'v4')
+        if (!adapter || !adapter.computeV4Quote) continue
+        for (const [fee, tickSpacing] of dex.v4TickSpacings!) {
+          v4Probes.push(
+            adapter
+              .computeV4Quote({
+                chainId: chain.id,
+                chainKey: chain.key,
+                dex,
+                tokenIn,
+                tokenOut,
+                amountIn,
+                fee,
+                tickSpacing,
+                hooks: '0x0000000000000000000000000000000000000000',
+                gasPriceWei,
+                client,
+              })
+              .catch(() => null)
+          )
+        }
+      }
+      if (v4Probes.length > 0) {
+        const v4Quotes = await Promise.all(v4Probes)
+        v4Quotes.forEach((q) => {
+          if (q) quotes.push(q)
+        })
+      }
+    }
+
     console.log(`[PoolDiscovery] Found ${quotes.length} direct quotes for ${tokenIn.symbol} -> ${tokenOut.symbol}`)
     return quotes
   }

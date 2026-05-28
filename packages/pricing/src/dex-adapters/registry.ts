@@ -9,7 +9,7 @@ export class DexAdapterRegistry {
     console.log(`[DexRegistry] Registered adapter: ${key}`)
   }
   
-  get(protocol: string, version: 'v2' | 'v3'): IDexAdapter | undefined {
+  get(protocol: string, version: 'v2' | 'v3' | 'v4'): IDexAdapter | undefined {
     const key = `${protocol}-${version}` as DexAdapterKey
     return this.adapters.get(key)
   }
@@ -18,7 +18,7 @@ export class DexAdapterRegistry {
     return Array.from(this.adapters.values())
   }
   
-  has(protocol: string, version: 'v2' | 'v3'): boolean {
+  has(protocol: string, version: 'v2' | 'v3' | 'v4'): boolean {
     const key = `${protocol}-${version}` as DexAdapterKey
     return this.adapters.has(key)
   }

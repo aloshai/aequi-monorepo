@@ -61,6 +61,25 @@ export const CHAIN_CONFIGS: Record<ChainKey, ChainConfig> = {
                 feeTiers: [FeeAmount.LOWEST, FeeAmount.LOW_200, FeeAmount.LOW_300, FeeAmount.LOW_400, FeeAmount.LOW, FeeAmount.MEDIUM, FeeAmount.HIGH],
                 useRouter02: true, // Uniswap V3 uses Router02 (no deadline in struct)
             },
+            {
+                // Uniswap V4 on Ethereum mainnet. Singleton PoolManager;
+                // routerAddress equals factoryAddress (V4 has no router —
+                // Settler talks directly to PoolManager via the UNISWAPV4 action).
+                // Standard fee/tickSpacing combinations covered:
+                //   100 / 1   (stable-stable)
+                //   500 / 10  (stable-volatile)
+                //   3000 / 60 (volatile)
+                //   10000/200 (exotic)
+                id: 'uniswap-v4',
+                label: 'Uniswap V4',
+                protocol: 'uniswap',
+                version: 'v4',
+                factoryAddress: '0x000000000004444c5dc75cB358380D2e3dE08A90', // PoolManager
+                routerAddress: '0x000000000004444c5dc75cB358380D2e3dE08A90', // No router on V4
+                quoterAddress: '0x52F0E24D1c21C8A0cB1e5a5dD6198556BD9E1203',
+                feeTiers: [100, 500, 3000, 10000],
+                v4TickSpacings: [[100, 1], [500, 10], [3000, 60], [10000, 200]],
+            },
         ],
     },
     bsc: {
@@ -118,6 +137,18 @@ export const CHAIN_CONFIGS: Record<ChainKey, ChainConfig> = {
                 quoterAddress: '0x78D78E420Da98ad378D7799bE8f4AF69033EB077',
                 feeTiers: [FeeAmount.LOWEST, FeeAmount.LOW_200, FeeAmount.LOW_300, FeeAmount.LOW_400, FeeAmount.LOW, FeeAmount.MEDIUM, FeeAmount.HIGH],
                 useRouter02: true, // Uniswap V3 uses Router02 (no deadline in struct)
+            },
+            {
+                // Uniswap V4 on BNB Chain (chainId 56).
+                id: 'uniswap-v4',
+                label: 'Uniswap V4',
+                protocol: 'uniswap',
+                version: 'v4',
+                factoryAddress: '0x28e2Ea090877bF75740558f6BFB36A5ffeE9e9dF', // PoolManager
+                routerAddress: '0x28e2Ea090877bF75740558f6BFB36A5ffeE9e9dF',
+                quoterAddress: '0x9F75dD27D6664c475B90e105573E550ff69437B0',
+                feeTiers: [100, 500, 3000, 10000],
+                v4TickSpacings: [[100, 1], [500, 10], [3000, 60], [10000, 200]],
             },
         ],
     },

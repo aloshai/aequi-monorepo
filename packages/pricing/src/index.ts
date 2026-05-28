@@ -14,4 +14,4 @@ export * from './honeypot-detector'
 // Adapter infrastructure exports (for custom adapter development)
 export { BaseDexAdapter } from './dex-adapters/base-adapter'
 export { dexRegistry, DexAdapterRegistry } from './dex-adapters/registry'
-export type { IDexAdapter, V2QuoteParams, V3QuoteParams, DexAdapterKey } from './dex-adapters/types'
+export type { IDexAdapter, V2QuoteParams, V3QuoteParams, V4QuoteParams, DexAdapterKey } from './dex-adapters/types'

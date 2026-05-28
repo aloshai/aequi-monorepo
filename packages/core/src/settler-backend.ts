@@ -146,6 +146,104 @@ const dexIdToSettlerForkId = (dexId: string): number => {
   }
 }
 
+// ─── Uniswap V4 helpers ───────────────────────────────────────────────────────
+
+/**
+ * MAX_TOKENS from FlashAccountingCommon.sol — the size of Settler's
+ * per-swap notes table. The perfect hash must distribute fillen tokens
+ * into distinct slots in [0, MAX_TOKENS).
+ */
+const SETTLER_V4_MAX_TOKENS = 8
+
+/** sqrtPriceX96 bounds, identical to Uniswap V3/V4. */
+const MIN_SQRT_PRICE_PLUS_ONE = 4295128740n
+const MAX_SQRT_PRICE_MINUS_ONE =
+  1461446703485210103287273052203988822378723970341n
+
+const toBigIntAddress = (addr: Address): bigint => BigInt(addr)
+
+/**
+ * Find the smallest (hashMul, hashMod) pair such that two distinct tokens
+ * land in different slots of Settler's MAX_TOKENS-sized notes table. Mirrors
+ * the Solidity loop in lib/0x-settler/test/integration/UniswapV4PairTest.t.sol
+ * (`uniswapV4PerfectHash`).
+ *
+ * For two tokens this terminates quickly (typically within a few iterations).
+ * Token order matters only in that hashMod must produce distinct slots — the
+ * returned values are valid for either swap direction across the same pair.
+ */
+const findV4PerfectHash = (token0: Address, token1: Address): { hashMul: bigint; hashMod: bigint } => {
+  const a = toBigIntAddress(token0)
+  const b = toBigIntAddress(token1)
+  const max = BigInt(SETTLER_V4_MAX_TOKENS)
+  for (let hashMod = max + 1n; hashMod < max + 256n; hashMod += 1n) {
+    const start = hashMod / 2n
+    const end = hashMod + hashMod / 2n
+    for (let hashMul = start; hashMul < end; hashMul += 1n) {
+      const slotA = ((a * hashMul) % hashMod) % max
+      const slotB = ((b * hashMul) % hashMod) % max
+      if (slotA !== slotB) {
+        return { hashMul, hashMod }
+      }
+    }
+  }
+  // Practically unreachable for two distinct addresses.
+  throw new AequiError(
+    'Could not find Settler V4 perfect hash for token pair',
+    ErrorCode.INTERNAL_ERROR,
+    { metadata: { token0, token1 } }
+  )
+}
+
+/** Big-endian byte encoder for n-byte unsigned ints into a Uint8Array. */
+const writeUint = (out: number[], value: bigint, byteLen: number): void => {
+  for (let i = byteLen - 1; i >= 0; i -= 1) {
+    out.push(Number((value >> (BigInt(i) * 8n)) & 0xffn))
+  }
+}
+
+const writeAddress = (out: number[], addr: Address): void => {
+  writeUint(out, toBigIntAddress(addr), 20)
+}
+
+const bytesToHex = (bytes: number[]): Hex => {
+  const hex = bytes.map((b) => b.toString(16).padStart(2, '0')).join('')
+  return `0x${hex}` as Hex
+}
+
+/**
+ * Encode a single hookless V4 fill (no multi-pool batching, no hook data).
+ * Layout per Settler's V4 `fills` documentation:
+ *   uint16 bps | uint160 sqrtPriceLimitX96 | uint8 packingKey | (0|1|2)*address tokens
+ *   | uint24 fee | uint24 tickSpacing | address hooks | uint24 hookDataLen | bytes hookData
+ *
+ * Packing key = 1 means: sell token unchanged from previous fill (which for
+ * the first fill is the action's `sellToken` argument), encode buy token.
+ * Total length for a hookless single-hop fill: 2 + 20 + 1 + 20 + 3 + 3 + 20 + 3 = 72 bytes.
+ */
+const encodeV4SingleHopFill = (args: {
+  bps: number
+  buyToken: Address
+  zeroForOne: boolean
+  fee: number
+  tickSpacing: number
+}): Hex => {
+  const bytes: number[] = []
+  writeUint(bytes, BigInt(args.bps), 2)
+  writeUint(
+    bytes,
+    args.zeroForOne ? MIN_SQRT_PRICE_PLUS_ONE : MAX_SQRT_PRICE_MINUS_ONE,
+    20
+  )
+  bytes.push(0x01) // packing key: encode only buy token
+  writeAddress(bytes, args.buyToken)
+  writeUint(bytes, BigInt(args.fee), 3)
+  writeUint(bytes, BigInt(args.tickSpacing), 3)
+  writeAddress(bytes, '0x0000000000000000000000000000000000000000') // hooks = 0
+  writeUint(bytes, 0n, 3) // hookDataLen = 0
+  return bytesToHex(bytes)
+}
+
 interface PoolResolveContext {
   /** The DEX entry from chain config for this hop. */
   readonly dexId: string
@@ -155,8 +253,10 @@ interface PoolResolveContext {
   readonly tokenOut: Address
   /** Pool address chosen by the planner (when known). */
   readonly poolAddress: Address | undefined
-  /** Fee tier (V3 only). */
+  /** Fee tier (V3 / V4 only). */
   readonly feeTier: number | undefined
+  /** Tick spacing (V4 only; V3 forks derive it from fee tier). */
+  readonly tickSpacing: number | undefined
 }
 
 /**
@@ -515,7 +615,7 @@ export class SettlerBackend implements ExecutorBackend {
     }
 
     for (const v of plan.quote.hopVersions) {
-      if (v !== 'v2' && v !== 'v3') {
+      if (v !== 'v2' && v !== 'v3' && v !== 'v4') {
         throw new AequiError(
           `Hop version '${v}' is not supported by SettlerBackend yet`,
           ErrorCode.NOT_IMPLEMENTED,
@@ -580,10 +680,14 @@ export class SettlerBackend implements ExecutorBackend {
         ? getAddress(source.poolAddress)
         : undefined,
       feeTier: source.feeTier,
+      tickSpacing: source.tickSpacing,
     }
 
     if (hopVersion === 'v2') {
       return this.encodeV2HopAction(plan, ctx, hopRecipient, hopMinOut, SETTLER_BPS_FULL)
+    }
+    if (hopVersion === 'v4') {
+      return this.encodeV4HopAction(ctx, hopRecipient, hopMinOut, 10_000)
     }
     return this.encodeV3HopAction(ctx, hopRecipient, hopMinOut, SETTLER_BPS_FULL)
   }
@@ -606,7 +710,7 @@ export class SettlerBackend implements ExecutorBackend {
         { metadata: { hopIndex, legRatio: leg.ratioBps } }
       )
     }
-    if (hopVersion !== 'v2' && hopVersion !== 'v3') {
+    if (hopVersion !== 'v2' && hopVersion !== 'v3' && hopVersion !== 'v4') {
       throw new AequiError(
         `Hop version '${hopVersion}' is not supported by SettlerBackend yet`,
         ErrorCode.NOT_IMPLEMENTED,
@@ -619,6 +723,7 @@ export class SettlerBackend implements ExecutorBackend {
       tokenOut: getAddress(tokenOut.address),
       poolAddress: source.poolAddress ? getAddress(source.poolAddress) : undefined,
       feeTier: source.feeTier,
+      tickSpacing: source.tickSpacing,
     }
     // Split leg hops always carry minOut=0; overall protection comes from
     // Settler.execute's AllowedSlippage check on the buyToken after all
@@ -627,6 +732,9 @@ export class SettlerBackend implements ExecutorBackend {
     const bpsBig = BigInt(bps)
     if (hopVersion === 'v2') {
       return this.encodeV2HopAction(plan, ctx, settlerAddress, hopMinOut, bpsBig)
+    }
+    if (hopVersion === 'v4') {
+      return this.encodeV4HopAction(ctx, settlerAddress, hopMinOut, Number(bpsBig))
     }
     return this.encodeV3HopAction(ctx, settlerAddress, hopMinOut, bpsBig)
   }
@@ -667,6 +775,76 @@ export class SettlerBackend implements ExecutorBackend {
       selector: SETTLER_ACTION_SELECTORS.UNISWAPV2,
       data,
       label: `v2-hop-${ctx.dexId}`,
+    }
+  }
+
+  /**
+   * Encode a Uniswap V4 single-hop hookless swap as a UNISWAPV4 Settler action.
+   *
+   * UNISWAPV4(recipient, sellToken, bps, feeOnTransfer, hashMul, hashMod, fills, amountOutMin)
+   *
+   * `fills` is the custom per-fill packed format (see encodeV4SingleHopFill).
+   * `hashMul`/`hashMod` form a perfect hash distributing (sellToken, buyToken)
+   * into distinct slots of Settler's notes table — computed on demand here.
+   * `feeOnTransfer` is forced false; FoT tokens require V4 action variants
+   * not modelled in this iteration.
+   *
+   * The hop's `bps` is the percentage of the Settler-held balance to spend on
+   * this fill (0..10000).
+   */
+  private encodeV4HopAction(
+    ctx: PoolResolveContext,
+    recipient: Address,
+    amountOutMin: bigint,
+    bps: number
+  ): SettlerAction {
+    if (typeof ctx.feeTier !== 'number') {
+      throw new AequiError(
+        `V4 hop requires a fee tier (dex=${ctx.dexId})`,
+        ErrorCode.INVALID_REQUEST
+      )
+    }
+    if (typeof ctx.tickSpacing !== 'number') {
+      throw new AequiError(
+        `V4 hop requires a tick spacing (dex=${ctx.dexId})`,
+        ErrorCode.INVALID_REQUEST
+      )
+    }
+    const zeroForOne = ctx.tokenIn.toLowerCase() < ctx.tokenOut.toLowerCase()
+    const fills = encodeV4SingleHopFill({
+      bps,
+      buyToken: ctx.tokenOut,
+      zeroForOne,
+      fee: ctx.feeTier,
+      tickSpacing: ctx.tickSpacing,
+    })
+    const { hashMul, hashMod } = findV4PerfectHash(ctx.tokenIn, ctx.tokenOut)
+    const data = encodeAbiParameters(
+      [
+        { type: 'address' }, // recipient
+        { type: 'address' }, // sellToken
+        { type: 'uint256' }, // bps (top-level — share of msg.sender balance routed)
+        { type: 'bool' }, // feeOnTransfer
+        { type: 'uint256' }, // hashMul
+        { type: 'uint256' }, // hashMod
+        { type: 'bytes' }, // fills
+        { type: 'uint256' }, // amountOutMin
+      ],
+      [
+        recipient,
+        ctx.tokenIn,
+        SETTLER_BPS_FULL,
+        false,
+        hashMul,
+        hashMod,
+        fills,
+        amountOutMin,
+      ]
+    )
+    return {
+      selector: SETTLER_ACTION_SELECTORS.UNISWAPV4,
+      data,
+      label: `v4-hop-${ctx.dexId}`,
     }
   }
 

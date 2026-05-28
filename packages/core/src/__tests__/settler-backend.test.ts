@@ -438,6 +438,78 @@ describe('SettlerBackend.build (AllowanceHolder mode)', () => {
     ).toThrow(/native input/)
   })
 
+  it('V4 hop encodes as UNISWAPV4 with packed fills + perfect hash', () => {
+    const v4Pool: Address = getAddress('0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640')
+    const v4Quote: PriceQuote = {
+      ...baseQuote(),
+      sources: [
+        {
+          dexId: 'uniswap-v4',
+          poolAddress: v4Pool,
+          feeTier: 500,
+          tickSpacing: 10,
+          amountIn: 1_000_000_000_000_000_000n,
+          amountOut: 500_000_000_000_000_000n,
+        },
+      ],
+      hopVersions: ['v4'],
+    }
+    const result = backend.build({
+      quote: v4Quote,
+      recipient: RECIPIENT,
+      amountOutMin: 475_000_000_000_000_000n,
+      useNativeInput: false,
+      useNativeOutput: false,
+      tokenFlow: 'allowance-holder',
+      chain: makeChain(),
+      fee: null,
+      deadlineSeconds: 600,
+    })
+
+    const decoded = decodeOuter(result.data)
+    expect(decoded.actions).toHaveLength(1)
+    expect(selectorOf(decoded.actions[0]!)).toBe(
+      SETTLER_ACTION_SELECTORS.UNISWAPV4.toLowerCase()
+    )
+
+    const [recipient, sellToken, bps, feeOnTransfer, hashMul, hashMod, fills, minOut] =
+      decodeAbiParameters(
+        [
+          { type: 'address' },
+          { type: 'address' },
+          { type: 'uint256' },
+          { type: 'bool' },
+          { type: 'uint256' },
+          { type: 'uint256' },
+          { type: 'bytes' },
+          { type: 'uint256' },
+        ],
+        ('0x' + decoded.actions[0]!.slice(10)) as `0x${string}`
+      ) as readonly [Address, Address, bigint, boolean, bigint, bigint, `0x${string}`, bigint]
+
+    expect(recipient).toBe(SETTLER_ADDR)
+    expect(sellToken).toBe(TOKEN_A)
+    expect(bps).toBe(10_000n)
+    expect(feeOnTransfer).toBe(false)
+    expect(hashMod).toBeGreaterThan(8n)
+    expect(hashMul).toBeGreaterThan(0n)
+    // Perfect-hash must put the two tokens in distinct buckets.
+    const slotA = ((BigInt(TOKEN_A) * hashMul) % hashMod) % 8n
+    const slotB = ((BigInt(TOKEN_B) * hashMul) % hashMod) % 8n
+    expect(slotA).not.toBe(slotB)
+    expect(minOut).toBe(475_000_000_000_000_000n)
+
+    // Fill layout: 2 bytes bps + 20 bytes sqrtLimit + 1 byte packKey + 20 bytes buyToken
+    //              + 3 bytes fee + 3 bytes tickSpacing + 20 bytes hooks + 3 bytes hookDataLen = 72
+    expect((fills.length - 2) / 2).toBe(72)
+    const fillBps = parseInt(fills.slice(2, 6), 16)
+    expect(fillBps).toBe(10_000)
+    const packKey = parseInt(fills.slice(2 + 4 + 40, 2 + 4 + 40 + 2), 16)
+    expect(packKey).toBe(1)
+    // Hook address tail is zero.
+    expect(fills.slice(-46, -6)).toBe('0'.repeat(40))
+  })
+
   it('Permit2 mode rejects chain without SettlerMetaTxn configured', () => {
     const chain = makeChain()
     const noMetaTxn: ChainConfig = {

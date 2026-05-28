@@ -2,20 +2,34 @@ import type { Address, Chain } from 'viem'
 
 export type ChainKey = 'ethereum' | 'bsc' | 'incentiv'
 
-export type RouteHopVersion = 'v2' | 'v3'
+export type RouteHopVersion = 'v2' | 'v3' | 'v4'
 export type RoutePreference = 'auto' | RouteHopVersion
 
 export interface DexConfig {
   id: string
   label: string
   protocol: 'uniswap' | 'pancakeswap' | 'incentive-portal'
-  version: 'v2' | 'v3'
+  version: 'v2' | 'v3' | 'v4'
+  /**
+   * V4 uses a singleton PoolManager rather than per-pool factories. For v4
+   * dexes this is the PoolManager address itself.
+   */
   factoryAddress: Address
+  /**
+   * V4 does not have a swap router — routing happens via Settler's
+   * UNISWAPV4 action against PoolManager directly. For v4 entries this is
+   * a placeholder (set equal to factoryAddress).
+   */
   routerAddress: Address
   quoterAddress?: Address
   feeTiers?: number[]
   initCodeHash?: `0x${string}`
   useRouter02?: boolean // For Uniswap V3 Router02 (different ABI without deadline in struct)
+  /**
+   * V4 only: known (fee, tickSpacing) pairs the discovery layer probes.
+   * Standard Uniswap V4 deployment uses [[100,1],[500,10],[3000,60],[10000,200]].
+   */
+  v4TickSpacings?: ReadonlyArray<readonly [fee: number, tickSpacing: number]>
 }
 
 export interface SettlerChainAddresses {
@@ -56,6 +70,8 @@ export interface PriceSource {
   dexId: string
   poolAddress: Address
   feeTier?: number
+  /** V4 only — tick spacing chosen by pool creator. V3 forks derive this from fee. */
+  tickSpacing?: number
   approximate?: boolean
   amountIn: bigint
   amountOut: bigint

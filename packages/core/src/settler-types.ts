@@ -54,6 +54,17 @@ export const SETTLER_ACTION_SELECTORS = {
   ),
 
   /**
+   * UNISWAPV4(recipient, sellToken, bps, feeOnTransfer, hashMul, hashMod, fills, amountOutMin)
+   * — V4 swap. `fills` is a custom packed format:
+   *   per-fill: uint16 bps | uint160 sqrtPriceLimitX96 | uint8 packingKey | (0|1|2)*address tokens | uint24 fee | uint24 tickSpacing | address hooks | uint24 hookDataLen | bytes hookData
+   * packingKey: 0=both unchanged, 1=new buy token, 2=multihop (prev buy→sell, new buy), 3=both encoded
+   * For Aequi's hookless V4 single-hop the encoding is simpler — see settler-backend.ts.
+   */
+  UNISWAPV4: toFunctionSelector(
+    'UNISWAPV4(address,address,uint256,bool,uint256,uint256,bytes,uint256)'
+  ),
+
+  /**
    * BASIC(sellToken, bps, pool, offset, data)
    * — Generic external call. Used for arbitrary token transfers and
    * non-swap utility operations (e.g. WETH wrap/unwrap).

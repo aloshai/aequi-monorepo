@@ -240,6 +240,10 @@ export const estimateGasForRoute = (hops: RouteHopVersion[]): bigint => {
   const GAS_COSTS: Record<RouteHopVersion, bigint> = {
     v2: 70000n,
     v3: 110000n,
+    // V4 hops are slightly cheaper than V3 in practice (no separate router,
+    // direct PoolManager.swap via Settler), but we use the V3 estimate as a
+    // safe upper bound until production data is available.
+    v4: 110000n,
   }
 
   if (!hops.length) {
