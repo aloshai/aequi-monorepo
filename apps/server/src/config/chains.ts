@@ -22,6 +22,23 @@ const incentivChain = defineChain({
     },
 })
 
+const inkChain = defineChain({
+    id: 57073,
+    name: 'Ink',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: {
+        default: { http: ['https://rpc-gel.inkonchain.com'] },
+    },
+    blockExplorers: {
+        default: { name: 'Ink Explorer', url: 'https://explorer.inkonchain.com' },
+    },
+    contracts: {
+        multicall3: {
+            address: '0xcA11bde05977b3631167028862bE2a173976CA11',
+        },
+    },
+})
+
 const buildSettlerAddresses = (key: ChainKey) => ({
     settler: appConfig.settler.byChain[key].settler,
     settlerMetaTxn: appConfig.settler.byChain[key].settlerMetaTxn,
@@ -147,6 +164,35 @@ export const CHAIN_CONFIGS: Record<ChainKey, ChainConfig> = {
                 factoryAddress: '0x28e2Ea090877bF75740558f6BFB36A5ffeE9e9dF', // PoolManager
                 routerAddress: '0x28e2Ea090877bF75740558f6BFB36A5ffeE9e9dF',
                 quoterAddress: '0x9F75dD27D6664c475B90e105573E550ff69437B0',
+                feeTiers: [100, 500, 3000, 10000],
+                v4TickSpacings: [[100, 1], [500, 10], [3000, 60], [10000, 200]],
+            },
+        ],
+    },
+    ink: {
+        key: 'ink',
+        id: inkChain.id,
+        name: 'Ink',
+        nativeCurrencySymbol: inkChain.nativeCurrency.symbol,
+        wrappedNativeAddress: '0x4200000000000000000000000000000000000006',
+        rpcUrls: appConfig.rpc.ink.length ? appConfig.rpc.ink : Array.from(inkChain.rpcUrls.default.http),
+        fallbackRpcUrls: appConfig.rpc.inkFallback,
+        disablePublicRpcRegistry: appConfig.rpc.ink.length > 0,
+        viemChain: inkChain,
+        settler: buildSettlerAddresses('ink'),
+        dexes: [
+            {
+                // Uniswap V4 on Ink (officially deployed by Uniswap Labs Jan 28 2025).
+                // V3 is *not* in Uniswap's official Ink manifest (community-deployed
+                // Factory exists but no Quoter periphery); V2 is not deployed on Ink
+                // at all. So Aequi's Ink integration is V4-only.
+                id: 'uniswap-v4',
+                label: 'Uniswap V4',
+                protocol: 'uniswap',
+                version: 'v4',
+                factoryAddress: '0x360e68faccca8ca495c1b759fd9eee466db9fb32', // PoolManager
+                routerAddress: '0x360e68faccca8ca495c1b759fd9eee466db9fb32',
+                quoterAddress: '0x3972c00f7ed4885e145823eb7c655375d275a1c5',
                 feeTiers: [100, 500, 3000, 10000],
                 v4TickSpacings: [[100, 1], [500, 10], [3000, 60], [10000, 200]],
             },

@@ -115,6 +115,29 @@ export const INTERMEDIATE_TOKENS: Record<ChainKey, Array<Omit<TokenMetadata, 'to
       decimals: 18,
     },
   ],
+  ink: [
+    {
+      chainId: 57073,
+      address: '0x4200000000000000000000000000000000000006',
+      symbol: 'WETH',
+      name: 'Wrapped Ether',
+      decimals: 18,
+    },
+    {
+      chainId: 57073,
+      address: '0xF1815bd50389c46847f0Bda824eC8da914045D14',
+      symbol: 'USDC.e',
+      name: 'Bridged USDC (Stargate)',
+      decimals: 6,
+    },
+    {
+      chainId: 57073,
+      address: '0x0200C29006150606B650577BBE7B6248F58470c1',
+      symbol: 'USDT0',
+      name: 'USD₮0',
+      decimals: 6,
+    },
+  ],
   incentiv: [
     {
       chainId: 24101,

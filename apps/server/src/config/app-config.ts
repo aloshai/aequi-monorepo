@@ -75,6 +75,9 @@ const DEFAULTS = {
     ethSettlerMetaTxn: '0x0476C2483f4c6AA4Dfb6EFA29815AB74d9C1e508' as Address,
     bscSettler: '0xc2eff1F1cE35d395408A34Ad881dBCD978F40b89' as Address,
     bscSettlerMetaTxn: '0xFffdb7DBAEaf3138B7cfc2328c21f9343C1f7faA' as Address,
+    // Ink (chainId 57073), resolved 2026-05-28 via Deployer.ownerOf
+    inkSettler: '0x51d9175CEE6eAdCD99936C13C5e6d8D172e6158f' as Address,
+    inkSettlerMetaTxn: '0xa049867cD65f08A8417C43D4113bfc42Dc66B46f' as Address,
   },
 }
 
@@ -98,6 +101,8 @@ export const appConfig = {
     bscFallback: parseUrlList(process.env.BSC_RPC_URL_FALLBACK),
     incentiv: parseUrlList(process.env.INCENTIV_RPC_URL),
     incentivFallback: parseUrlList(process.env.INCENTIV_RPC_URL_FALLBACK),
+    ink: parseUrlList(process.env.INK_RPC_URL),
+    inkFallback: parseUrlList(process.env.INK_RPC_URL_FALLBACK),
   },
   dex: {
     uniswapV2Factory: parseAddressWithFallback(process.env.UNISWAP_V2_FACTORY, DEFAULTS.dex.uniswapV2Factory),
@@ -138,6 +143,10 @@ export const appConfig = {
         // see docs/superpowers/plans/2026-05-26-plan-1-settler-infrastructure-NOTES.md.
         settler: parseAddressOrNull(process.env.SETTLER_INCENTIV),
         settlerMetaTxn: parseAddressOrNull(process.env.SETTLER_META_TXN_INCENTIV),
+      },
+      ink: {
+        settler: parseAddressOrNull(process.env.SETTLER_INK) ?? DEFAULTS.settler.inkSettler,
+        settlerMetaTxn: parseAddressOrNull(process.env.SETTLER_META_TXN_INK) ?? DEFAULTS.settler.inkSettlerMetaTxn,
       },
     },
   },

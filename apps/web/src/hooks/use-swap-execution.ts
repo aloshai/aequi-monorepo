@@ -17,12 +17,17 @@ import { parseSwapError } from '../utils/swap-errors'
 import { wagmiConfig, CHAIN_BY_KEY } from '../lib/wagmi'
 import type { ChainKey, AllowanceResponse, Permit2PayloadResponse } from '../types/api'
 
-type SupportedChainId = typeof CHAIN_BY_KEY.ethereum.id | typeof CHAIN_BY_KEY.bsc.id | typeof CHAIN_BY_KEY.incentiv.id
+type SupportedChainId =
+  | typeof CHAIN_BY_KEY.ethereum.id
+  | typeof CHAIN_BY_KEY.bsc.id
+  | typeof CHAIN_BY_KEY.incentiv.id
+  | typeof CHAIN_BY_KEY.ink.id
 
 const CHAIN_ID_BY_KEY: Record<ChainKey, SupportedChainId> = {
   ethereum: CHAIN_BY_KEY.ethereum.id,
   bsc: CHAIN_BY_KEY.bsc.id,
   incentiv: CHAIN_BY_KEY.incentiv.id,
+  ink: CHAIN_BY_KEY.ink.id,
 }
 
 /** Fetch current fee params with a 30% buffer on maxFeePerGas for inclusion safety. */
