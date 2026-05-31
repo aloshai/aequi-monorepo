@@ -346,6 +346,99 @@ export class PoolDiscovery {
       })
     }
 
+    // Slipstream path: V3-versioned dexes whose factory is tickSpacing-keyed
+    // (Velodrome Slipstream, Aerodrome Slipstream). We probe each known
+    // tickSpacing via the Slipstream-specific factory ABI (int24 instead of
+    // uint24 fee) and pass the pool address straight to the adapter, which
+    // uses Velodrome's Quoter for pricing — skipping the AequiLens / V3 state
+    // multicall path because pool state isn't required when the Quoter
+    // returns the full quote.
+    if (allowedVersions.includes('v3')) {
+      const slipstreamDexes = chain.dexes.filter(
+        (d) => d.version === 'v3' && d.slipstreamTickSpacings && d.slipstreamTickSpacings.length > 0,
+      )
+      if (slipstreamDexes.length > 0) {
+        const slipstreamCalls: any[] = []
+        const slipstreamMap: { dex: DexConfig; tickSpacing: number; index: number }[] = []
+        for (const dex of slipstreamDexes) {
+          for (const tickSpacing of dex.slipstreamTickSpacings!) {
+            slipstreamCalls.push({
+              address: dex.factoryAddress,
+              abi: [
+                {
+                  type: 'function',
+                  name: 'getPool',
+                  stateMutability: 'view',
+                  inputs: [
+                    { type: 'address' },
+                    { type: 'address' },
+                    { type: 'int24' },
+                  ],
+                  outputs: [{ type: 'address' }],
+                },
+              ] as const,
+              functionName: 'getPool',
+              args: [tokenIn.address, tokenOut.address, tickSpacing],
+            })
+            slipstreamMap.push({ dex, tickSpacing, index: slipstreamCalls.length - 1 })
+          }
+        }
+        if (slipstreamCalls.length > 0) {
+          const factoryResults = await client.multicall({ allowFailure: true, contracts: slipstreamCalls })
+          const slipstreamProbes: Promise<PriceQuote | null>[] = []
+          for (const item of slipstreamMap) {
+            const r = factoryResults[item.index]
+            if (!r || r.status !== 'success' || !r.result || r.result === ZERO_ADDRESS) continue
+            const poolAddress = r.result as Address
+            const adapter = dexRegistry.get(item.dex.protocol, 'v3')
+            if (!adapter || !adapter.computeV3Quote) continue
+            slipstreamProbes.push(
+              adapter
+                .computeV3Quote({
+                  chainId: chain.id,
+                  chainKey: chain.key,
+                  dex: item.dex,
+                  tokenIn,
+                  tokenOut,
+                  amountIn,
+                  poolAddress,
+                  // Slipstream pools key on tickSpacing, not fee. We use the
+                  // existing `fee` slot to carry it through to the adapter
+                  // (which knows to treat it as tickSpacing). Settler's V3
+                  // packed-path encoder serialises this as `poolId` either
+                  // way and Settler's chain mixin (forkId=4 for Velodrome)
+                  // wires it into the right pool-address derivation.
+                  fee: item.tickSpacing,
+                  // The adapter doesn't read these — Slipstream's Quoter
+                  // returns the full quote. Stub with zeros to satisfy the
+                  // shared V3 parameter shape.
+                  sqrtPriceX96: 0n,
+                  tick: 0,
+                  liquidity: 0n,
+                  token0:
+                    tokenIn.address.toLowerCase() < tokenOut.address.toLowerCase()
+                      ? tokenIn.address
+                      : tokenOut.address,
+                  token1:
+                    tokenIn.address.toLowerCase() < tokenOut.address.toLowerCase()
+                      ? tokenOut.address
+                      : tokenIn.address,
+                  gasPriceWei,
+                  client,
+                })
+                .catch(() => null),
+            )
+          }
+          if (slipstreamProbes.length > 0) {
+            const slipstreamQuotes = await Promise.all(slipstreamProbes)
+            slipstreamQuotes.forEach((q) => {
+              if (q) quotes.push(q)
+            })
+          }
+        }
+      }
+    }
+
     // V4 path: probe known (fee, tickSpacing) combinations against the V4
     // Quoter. Unlike V2/V3 there's no factory.getPair to enumerate pools —
     // each PoolKey is implicit. The quoter reverts cleanly for pools that

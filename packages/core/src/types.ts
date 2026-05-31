@@ -8,7 +8,13 @@ export type RoutePreference = 'auto' | RouteHopVersion
 export interface DexConfig {
   id: string
   label: string
-  protocol: 'uniswap' | 'pancakeswap' | 'incentive-portal'
+  /**
+   * Identifies the on-chain protocol family. Used by the dex-adapters
+   * registry to pick the right adapter (e.g. `uniswap-v3` adapter for
+   * Pancake V3, but `velodrome-slipstream` for Velodrome's CL because
+   * its factory uses tickSpacing rather than fee as the pool key).
+   */
+  protocol: 'uniswap' | 'pancakeswap' | 'incentive-portal' | 'velodrome-slipstream'
   version: 'v2' | 'v3' | 'v4'
   /**
    * V4 uses a singleton PoolManager rather than per-pool factories. For v4
@@ -30,6 +36,14 @@ export interface DexConfig {
    * Standard Uniswap V4 deployment uses [[100,1],[500,10],[3000,60],[10000,200]].
    */
   v4TickSpacings?: ReadonlyArray<readonly [fee: number, tickSpacing: number]>
+  /**
+   * Slipstream-style V3 forks (Velodrome, Aerodrome) key pools by
+   * tickSpacing rather than fee. When set, the pool discovery layer probes
+   * `factory.getPool(token0, token1, tickSpacing)` for each value here
+   * (instead of iterating `feeTiers`). For Velodrome the default set is
+   * [1, 50, 100, 200, 2000] (matches the factory's enableTickSpacing).
+   */
+  slipstreamTickSpacings?: ReadonlyArray<number>
 }
 
 export interface SettlerChainAddresses {

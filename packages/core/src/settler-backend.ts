@@ -137,6 +137,13 @@ const dexIdToSettlerForkId = (dexId: string): number => {
       return 1
     case 'sushiswap-v3':
       return 2
+    case 'velodrome-slipstream':
+      // Velodrome Slipstream uses forkId 4 in Settler's univ3forks dispatch
+      // (per core/univ3forks/VelodromeSlipstream.sol). Reuses the standard
+      // UNISWAPV3 action with an EIP-1167 minimal proxy pool address
+      // derivation. Aequi only routes through this on Ink for now (where
+      // our forked Settler wires forkId 4 → Ink Velodrome factory).
+      return 4
     default:
       throw new AequiError(
         `No Settler V3 forkId mapping for dex='${dexId}'`,

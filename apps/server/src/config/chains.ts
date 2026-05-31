@@ -184,8 +184,7 @@ export const CHAIN_CONFIGS: Record<ChainKey, ChainConfig> = {
             {
                 // Uniswap V4 on Ink (officially deployed by Uniswap Labs Jan 28 2025).
                 // V3 is *not* in Uniswap's official Ink manifest (community-deployed
-                // Factory exists but no Quoter periphery); V2 is not deployed on Ink
-                // at all. So Aequi's Ink integration is V4-only.
+                // Factory exists but no Quoter periphery).
                 id: 'uniswap-v4',
                 label: 'Uniswap V4',
                 protocol: 'uniswap',
@@ -195,6 +194,33 @@ export const CHAIN_CONFIGS: Record<ChainKey, ChainConfig> = {
                 quoterAddress: '0x3972c00f7ed4885e145823eb7c655375d275a1c5',
                 feeTiers: [100, 500, 3000, 10000],
                 v4TickSpacings: [[100, 1], [500, 10], [3000, 60], [10000, 200]],
+            },
+            {
+                // Velodrome V3 (Slipstream) on Ink — the dominant DEX by volume
+                // (DefiLlama: ~$1.8M/day vs Uniswap V4's ~$35/day).
+                //
+                // Settler routing: this DEX is dispatched via the standard
+                // UNISWAPV3 action with forkId=4, but ONLY through Aequi's
+                // forked Settler deployment on Ink (which wires forkId=4 to
+                // Velodrome Ink's factory + EIP-1167 init hash). Upstream
+                // 0x Settler does not include this on Ink; routing through
+                // it would fail at pool-address derivation. Aequi's Settler
+                // address for Ink (appConfig.settler.byChain.ink) must point
+                // at the forked deployment for Velodrome routing to work.
+                //
+                // Pool addressing: tickSpacing-keyed (not fee), see the
+                // slipstreamTickSpacings field below. Quoter ABI also uses
+                // int24 tickSpacing instead of uint24 fee. The Velodrome
+                // CL factory enables [1, 50, 100, 200, 2000] tickSpacings
+                // mapping to fees [100, 500, 500, 3000, 10000] respectively.
+                id: 'velodrome-slipstream',
+                label: 'Velodrome V3 (Slipstream)',
+                protocol: 'velodrome-slipstream',
+                version: 'v3',
+                factoryAddress: '0x04625B046C69577EfC40e6c0Bb83CDBAfab5a55F',
+                routerAddress: '0x04625B046C69577EfC40e6c0Bb83CDBAfab5a55F', // No standalone router in our flow; Settler dispatches directly
+                quoterAddress: '0x3FA596fAC2D6f7d16E01984897Ac04200Cb9cA05',
+                slipstreamTickSpacings: [1, 50, 100, 200, 2000],
             },
         ],
     },
