@@ -24,6 +24,7 @@ const RPC_CONFIGURED: Record<string, boolean> = {
   ethereum: appConfig.rpc.ethereum.length > 0,
   bsc: appConfig.rpc.bsc.length > 0,
   incentiv: appConfig.rpc.incentiv.length > 0,
+  ink: appConfig.rpc.ink.length > 0,
 }
 
 export class HealthService {
