@@ -78,6 +78,32 @@ export const tokenDirectory: Record<ChainKey, TokenPreset[]> = {
       decimals: 18,
     },
   ],
+  ink: [
+    {
+      address: '0xEeeeeEeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+      symbol: 'ETH',
+      label: 'ETH · Ether',
+      decimals: 18,
+    },
+    {
+      address: '0x4200000000000000000000000000000000000006',
+      symbol: 'WETH',
+      label: 'WETH · Wrapped Ether',
+      decimals: 18,
+    },
+    {
+      address: '0xF1815bd50389c46847f0Bda824eC8da914045D14',
+      symbol: 'USDC.e',
+      label: 'USDC.e · Bridged USDC',
+      decimals: 6,
+    },
+    {
+      address: '0x0200C29006150606B650577BBE7B6248F58470c1',
+      symbol: 'USDT0',
+      label: 'USDT0 · USD₮0',
+      decimals: 6,
+    },
+  ],
   incentiv: [
     {
       address: '0xEeeeeEeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',

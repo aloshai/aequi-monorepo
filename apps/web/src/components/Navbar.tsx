@@ -23,12 +23,14 @@ interface NavbarProps {
 const CHAIN_OPTIONS: Array<{ key: ChainKey; label: string }> = [
   { key: 'ethereum', label: 'Ethereum' },
   { key: 'bsc', label: 'BNB Chain' },
+  { key: 'ink', label: 'Ink' },
   { key: 'incentiv', label: 'Incentiv' },
 ]
 
 const CHAIN_LOGO: Record<ChainKey, string> = {
   ethereum: '/ethereum.svg',
   bsc: '/bnb.svg',
+  ink: '/ink.svg',
   incentiv: '/incentiv.svg',
 }
 
@@ -115,11 +117,14 @@ export function Navbar({
           transition={{ duration: 0.28, ease: 'easeOut' }}
           className="flex items-center gap-3"
         >
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-primary/12 text-sm font-bold text-primary">
+          <span
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg font-display text-base font-extrabold text-[#061016]"
+            style={{ background: 'linear-gradient(135deg, hsl(187 92% 56%), hsl(258 90% 68%))' }}
+          >
             A
           </span>
-          <span className="navbar-brand text-base font-semibold tracking-tight">Aequi Protocol</span>
-          <Badge variant="outline" className="hidden sm:inline-flex">Beta</Badge>
+          <span className="navbar-brand font-display text-base font-bold tracking-tight">Aequi</span>
+          <Badge variant="outline" className="hidden sm:inline-flex font-mono-num text-[0.62rem] uppercase tracking-wider">Beta</Badge>
         </motion.div>
 
         <motion.div

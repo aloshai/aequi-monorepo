@@ -29,23 +29,30 @@ import { PoweredBy } from './components/PoweredBy'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 
-type SupportedChainId = typeof CHAIN_BY_KEY.ethereum.id | typeof CHAIN_BY_KEY.bsc.id | typeof CHAIN_BY_KEY.incentiv.id
+type SupportedChainId =
+  | typeof CHAIN_BY_KEY.ethereum.id
+  | typeof CHAIN_BY_KEY.bsc.id
+  | typeof CHAIN_BY_KEY.incentiv.id
+  | typeof CHAIN_BY_KEY.ink.id
 
 const CHAIN_ID_BY_KEY: Record<ChainKey, SupportedChainId> = {
   ethereum: CHAIN_BY_KEY.ethereum.id,
   bsc: CHAIN_BY_KEY.bsc.id,
   incentiv: CHAIN_BY_KEY.incentiv.id,
+  ink: CHAIN_BY_KEY.ink.id,
 }
 
 const BLOCK_EXPLORER_BY_CHAIN: Record<ChainKey, string> = {
   ethereum: 'https://etherscan.io',
   bsc: 'https://bscscan.com',
   incentiv: 'https://explorer.incentiv.io',
+  ink: 'https://explorer.inkonchain.com',
 }
 
 const CHAIN_OPTIONS: Array<{ key: ChainKey; label: string }> = [
   { key: 'ethereum', label: 'Ethereum' },
   { key: 'bsc', label: 'BNB Smart Chain' },
+  { key: 'ink', label: 'Ink' },
   { key: 'incentiv', label: 'Incentiv' },
 ]
 
@@ -108,7 +115,7 @@ function App() {
     const presets = tokenDirectory[selectedChain] || []
     const cid = CHAIN_ID_BY_KEY[selectedChain]
     const symA = selectedChain === 'bsc' ? 'BNB' : selectedChain === 'incentiv' ? 'CENT' : 'ETH'
-    const symB = selectedChain === 'bsc' ? 'USDT' : 'USDC'
+    const symB = selectedChain === 'bsc' ? 'USDT' : selectedChain === 'ink' ? 'USDC.e' : 'USDC'
     const pA = presets.find(p => p.symbol === symA)
     const pB = presets.find(p => p.symbol === symB)
     setTokenA(pA ? { address: pA.address, symbol: pA.symbol, name: pA.label, decimals: pA.decimals, chainId: cid } : null)
@@ -327,9 +334,9 @@ function App() {
             transition={{ duration: 0.28, ease: 'easeOut' }}
             className="space-y-3"
           >
-            <Card className="border-border bg-card">
+            <Card className="border-border bg-card ring-hairline">
               <CardHeader className="pb-4">
-                <CardTitle className="text-2xl">Swap</CardTitle>
+                <CardTitle className="font-display text-2xl tracking-tight">Swap</CardTitle>
                 <CardDescription>
                   Compare routes, validate risk, and execute with a clear transaction lifecycle.
                 </CardDescription>
@@ -461,10 +468,50 @@ function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 8 }}
                 transition={{ duration: 0.24, ease: 'easeOut' }}
+                className="space-y-3"
               >
+                <Card className="border-border bg-card ring-hairline overflow-hidden">
+                  <CardContent className="relative p-7">
+                    <div
+                      aria-hidden
+                      className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full opacity-40 blur-3xl"
+                      style={{ background: 'radial-gradient(circle, rgba(34,211,238,0.35), transparent 70%)' }}
+                    />
+                    <div
+                      aria-hidden
+                      className="pointer-events-none absolute -bottom-20 -left-10 h-48 w-48 rounded-full opacity-30 blur-3xl"
+                      style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.35), transparent 70%)' }}
+                    />
+                    <div className="relative">
+                      <div className="mb-1 font-mono-num text-[0.65rem] uppercase tracking-[0.22em] text-[var(--accent)]">
+                        Aequi · Route Engine
+                      </div>
+                      <h2 className="font-display text-xl font-bold tracking-tight text-foreground">
+                        Best execution, made legible.
+                      </h2>
+                      <p className="mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
+                        Enter an amount to start live route discovery. Aequi scans every pool, scores splits and
+                        multi-hop paths, and routes atomically through 0x&nbsp;Settler — you see the math before you sign.
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+
                 <Card className="border-border bg-card">
-                  <CardContent className="p-6 text-sm text-muted-foreground">
-                    Enter an amount and token pair to load quote quality, route details, and execution insights.
+                  <CardContent className="grid grid-cols-3 gap-px overflow-hidden bg-[var(--border-secondary)] p-0">
+                    {[
+                      { k: 'Venues', v: 'V2 · V3 · V4', s: 'Uni · Pancake · Velo' },
+                      { k: 'Execution', v: '0x Settler', s: 'AllowanceHolder · Permit2' },
+                      { k: 'Routing', v: 'Split + Hop', s: 'Best-of across pools' },
+                    ].map((cell) => (
+                      <div key={cell.k} className="bg-card p-4">
+                        <div className="font-mono-num text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">
+                          {cell.k}
+                        </div>
+                        <div className="mt-1 font-display text-sm font-bold text-foreground">{cell.v}</div>
+                        <div className="mt-0.5 text-[0.68rem] text-muted-foreground">{cell.s}</div>
+                      </div>
+                    ))}
                   </CardContent>
                 </Card>
               </motion.section>
