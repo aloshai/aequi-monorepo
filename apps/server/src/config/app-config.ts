@@ -75,19 +75,18 @@ const DEFAULTS = {
     ethSettlerMetaTxn: '0x0476C2483f4c6AA4Dfb6EFA29815AB74d9C1e508' as Address,
     bscSettler: '0xc2eff1F1cE35d395408A34Ad881dBCD978F40b89' as Address,
     bscSettlerMetaTxn: '0xFffdb7DBAEaf3138B7cfc2328c21f9343C1f7faA' as Address,
-    // Ink (chainId 57073). The defaults below are 0x's *official* Settler
-    // deployment (resolved 2026-05-28 via Deployer.ownerOf). They route only
-    // to Uniswap V4 on Ink.
+    // Ink (chainId 57073) — Aequi's *forked* Settler deployment, which adds
+    // Velodrome V3 (Slipstream) dispatch on top of upstream's Uniswap-V4-only
+    // Ink build (forkId=4 → Velodrome Ink factory + EIP-1167 init hash).
+    // Deployed standalone (Deployer-ownership assert bypassed on 57073) from
+    // packages/contracts/lib/0x-settler/script/DeployAequiInk.s.sol on
+    // 2026-06-04; both contracts verified on-chain. Velodrome is the dominant
+    // DEX on Ink by volume, so this is the routing-relevant deployment.
     //
-    // To enable Velodrome V3 (Slipstream) routing — the dominant DEX on Ink
-    // by volume — deploy the Aequi fork of Settler from
-    // `packages/contracts/lib/0x-settler/script/DeployAequiInk.s.sol`, then
-    // override these addresses via the SETTLER_INK and SETTLER_META_TXN_INK
-    // env vars. The fork's chain mixin wires forkId=4 to Velodrome's Ink
-    // factory + EIP-1167 init hash so the standard UNISWAPV3 action reaches
-    // Velodrome pools.
-    inkSettler: '0x51d9175CEE6eAdCD99936C13C5e6d8D172e6158f' as Address,
-    inkSettlerMetaTxn: '0xa049867cD65f08A8417C43D4113bfc42Dc66B46f' as Address,
+    // (0x's official Ink Settler — V4 only — was 0x51d9175C…/0xa049867c…;
+    //  swapped out here for the Velodrome-capable fork.)
+    inkSettler: '0xDEAc709C87a797917F8D8547c0F92D6045AE71d6' as Address,
+    inkSettlerMetaTxn: '0xb68a6479D1556Ee9557607BCFB1f531A70caE275' as Address,
   },
 }
 
