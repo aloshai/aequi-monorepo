@@ -1,33 +1,56 @@
-@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  /* ── Aequi — Refined fintech (Linear/Stripe). Light default + dark.
+        One accent: refined indigo→violet. Restraint over density.
+        Tokens here drive the shadcn/tailwind utilities (hsl(var(--x))). ── */
   :root {
-    /* ── Terminal-grade DeFi — dark pro-trading palette ──
-       All values HSL (consumed by tailwind tokens as hsl(var(--x))). */
-    --background: 230 27% 6%;
-    --foreground: 228 24% 92%;
-    --card: 228 20% 9%;
-    --card-foreground: 228 24% 92%;
-    --popover: 228 22% 8%;
-    --popover-foreground: 228 24% 92%;
-    --primary: 187 92% 52%;            /* cyan */
-    --primary-foreground: 228 40% 6%;
-    --secondary: 228 16% 14%;
-    --secondary-foreground: 228 24% 92%;
-    --muted: 228 16% 13%;
-    --muted-foreground: 226 12% 58%;
-    --accent: 258 90% 68%;             /* violet */
+    --background: 240 20% 99%;
+    --foreground: 222 18% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 18% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 18% 11%;
+    --primary: 245 58% 60%;            /* refined indigo */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 16% 96%;
+    --secondary-foreground: 222 18% 11%;
+    --muted: 240 16% 96%;
+    --muted-foreground: 222 9% 46%;
+    --accent: 255 70% 64%;             /* violet */
     --accent-foreground: 0 0% 100%;
-    --destructive: 358 75% 59%;
+    --destructive: 358 70% 54%;
     --destructive-foreground: 0 0% 100%;
-    --border: 228 16% 17%;
-    --input: 228 16% 17%;
-    --ring: 187 92% 52%;
-    --radius: 0.9rem;
+    --border: 240 16% 91%;
+    --input: 240 16% 91%;
+    --ring: 245 58% 60%;
+    --radius: 0.85rem;
+  }
+
+  .dark {
+    --background: 230 14% 5%;
+    --foreground: 220 16% 92%;
+    --card: 228 13% 9%;
+    --card-foreground: 220 16% 92%;
+    --popover: 228 14% 8%;
+    --popover-foreground: 220 16% 92%;
+    --primary: 245 80% 70%;            /* indigo, lifted for dark */
+    --primary-foreground: 230 30% 8%;
+    --secondary: 228 12% 14%;
+    --secondary-foreground: 220 16% 92%;
+    --muted: 228 12% 13%;
+    --muted-foreground: 222 10% 56%;
+    --accent: 255 85% 74%;
+    --accent-foreground: 230 30% 8%;
+    --destructive: 358 72% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 225 12% 17%;
+    --input: 225 12% 17%;
+    --ring: 245 80% 70%;
   }
 
   * {
@@ -35,43 +58,62 @@
   }
 
   html {
+    color-scheme: light;
+  }
+  html.dark {
     color-scheme: dark;
   }
 
   body {
     @apply bg-background text-foreground;
-    /* Atmospheric depth: twin accent mesh blooms + fine dot grid + vignette.
-       Layered so the surface never reads as flat black. */
+    font-family: 'Geist', system-ui, -apple-system, sans-serif;
+    /* Refined atmosphere: a single soft accent bloom at top, very low opacity.
+       No grids, no neon — calm premium surface. */
     background-image:
-      radial-gradient(900px circle at 12% -8%, hsla(187, 92%, 50%, 0.10), transparent 45%),
-      radial-gradient(820px circle at 92% -4%, hsla(258, 90%, 64%, 0.10), transparent 42%),
-      radial-gradient(1200px circle at 50% 120%, hsla(258, 80%, 40%, 0.06), transparent 55%),
-      radial-gradient(hsla(228, 30%, 80%, 0.05) 1px, transparent 1px);
-    background-size: 100% 100%, 100% 100%, 100% 100%, 22px 22px;
+      radial-gradient(1100px 520px at 50% -10%, hsla(245, 70%, 62%, 0.07), transparent 70%);
     background-attachment: fixed;
-    background-position: 0 0, 0 0, 0 0, 0 0;
     font-feature-settings: 'ss01' on, 'cv01' on;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .dark body {
+    background-image:
+      radial-gradient(1100px 560px at 50% -12%, hsla(245, 80%, 64%, 0.12), transparent 70%);
   }
 }
 
 @layer utilities {
-  .font-display {
-    font-family: 'Bricolage Grotesque', 'Geist', system-ui, sans-serif;
-  }
   .font-mono-num {
-    font-family: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
+    font-family: 'Geist Mono', ui-monospace, 'SFMono-Regular', monospace;
     font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' on;
   }
-  /* Hairline gradient frame used on hero surfaces */
-  .ring-hairline {
-    box-shadow:
-      inset 0 1px 0 0 hsla(228, 30%, 90%, 0.06),
-      0 24px 60px -20px hsla(230, 60%, 3%, 0.9);
-  }
-  .text-gradient-cyan {
-    background: linear-gradient(100deg, hsl(187 92% 64%), hsl(258 90% 74%));
+  /* Refined gradient text for hero accents */
+  .text-gradient {
+    background: linear-gradient(102deg, hsl(245 58% 56%), hsl(255 70% 64%));
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
+  }
+  .dark .text-gradient {
+    background: linear-gradient(102deg, hsl(245 90% 78%), hsl(262 90% 80%));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  /* Soft layered card elevation (Stripe-like in light, subtle glow in dark) */
+  .elevate {
+    box-shadow:
+      0 1px 2px hsla(222, 20%, 20%, 0.04),
+      0 8px 24px -12px hsla(222, 24%, 20%, 0.10);
+  }
+  .dark .elevate {
+    box-shadow:
+      inset 0 1px 0 0 hsla(220, 40%, 90%, 0.04),
+      0 24px 60px -28px hsla(245, 60%, 4%, 0.8);
+  }
+  .hairline {
+    border: 1px solid hsl(var(--border));
   }
 }

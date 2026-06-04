@@ -1,9 +1,12 @@
 import type { ChainKey } from '../types/api'
 import { useState, useRef, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Settings2, Wallet, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { LogoMark, Wordmark } from './Logo'
+import { ThemeToggle } from './ThemeToggle'
 
 interface NavbarProps {
   selectedChain: ChainKey
@@ -115,15 +118,12 @@ export function Navbar({
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.28, ease: 'easeOut' }}
-          className="flex items-center gap-3"
+          className="flex items-center gap-2.5"
         >
-          <span
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg font-display text-base font-extrabold text-[#061016]"
-            style={{ background: 'linear-gradient(135deg, hsl(187 92% 56%), hsl(258 90% 68%))' }}
-          >
-            A
-          </span>
-          <span className="navbar-brand font-display text-base font-bold tracking-tight">Aequi</span>
+          <Link to="/" className="flex items-center gap-2.5" aria-label="Aequi home">
+            <LogoMark size={26} />
+            <Wordmark className="navbar-brand text-[1.1rem]" />
+          </Link>
           <Badge variant="outline" className="hidden sm:inline-flex font-mono-num text-[0.62rem] uppercase tracking-wider">Beta</Badge>
         </motion.div>
 
@@ -155,6 +155,8 @@ export function Navbar({
               </Button>
             </>
           )}
+
+          <ThemeToggle />
 
           <Button variant="ghost" size="icon" className="h-9 w-9" onClick={onOpenSettings} aria-label="Open settings" title="Settings">
             <Settings2 className="h-4 w-4" />
