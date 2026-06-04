@@ -2,7 +2,6 @@ import { createConfig, http } from 'wagmi'
 import { bsc, mainnet } from 'wagmi/chains'
 import { injected, metaMask } from 'wagmi/connectors'
 import { defineChain } from 'viem'
-import type { Chain } from 'viem'
 
 const incentiv = defineChain({
   id: 24101,

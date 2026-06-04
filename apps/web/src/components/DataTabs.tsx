@@ -10,12 +10,14 @@ const BLOCK_EXPLORER: Record<ChainKey, string> = {
   ethereum: 'https://etherscan.io',
   bsc: 'https://bscscan.com',
   incentiv: 'https://explorer.incentiv.io',
+  ink: 'https://explorer.inkonchain.com',
 }
 
 const NATIVE_SYMBOL: Record<ChainKey, string> = {
   ethereum: 'ETH',
   bsc: 'BNB',
   incentiv: 'CENT',
+  ink: 'ETH',
 }
 
 const COMPACT_SUFFIXES = ['', 'K', 'M', 'B', 'T', 'Q'] as const

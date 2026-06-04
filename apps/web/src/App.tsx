@@ -26,7 +26,7 @@ import { SettingsModal } from './components/SettingsModal'
 import { SwapConfirmModal } from './components/SwapConfirmModal'
 import { SwapLifecyclePanel } from './components/SwapLifecyclePanel'
 import { PoweredBy } from './components/PoweredBy'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 
 type SupportedChainId =
@@ -326,23 +326,32 @@ function App() {
         switchBusy={switchBusy}
       />
 
-      <main className="main-content px-4 pb-16 pt-8">
-        <div className="grid w-full max-w-6xl gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,560px)]">
-          <motion.section
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.28, ease: 'easeOut' }}
-            className="space-y-3"
-          >
-            <Card className="border-border bg-card ring-hairline">
-              <CardHeader className="pb-4">
-                <CardTitle className="font-display text-2xl tracking-tight">Swap</CardTitle>
-                <CardDescription>
-                  Compare routes, validate risk, and execute with a clear transaction lifecycle.
-                </CardDescription>
-              </CardHeader>
+      <main className="main-content px-4 pb-20 pt-10">
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+          className="flex w-full max-w-[480px] flex-col gap-3"
+        >
+          <div className="mb-1 flex items-end justify-between px-1">
+            <div>
+              <h1 className="font-serif text-3xl tracking-tight text-foreground" style={{ fontWeight: 500 }}>Swap</h1>
+              <p className="mt-1 text-sm text-muted-foreground">Best route across every pool — verified before you sign.</p>
+            </div>
+            <button
+              type="button"
+              onClick={openSettings}
+              aria-label="Swap settings"
+              className="nav-icon-btn shrink-0"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </button>
+          </div>
 
-              <CardContent className="space-y-3">
+          <Card className="border-border bg-card elevate">
+              <CardContent className="space-y-3 p-4 sm:p-5">
                 <TokenInput
                   label="Sell"
                   token={tokenA}
@@ -432,92 +441,35 @@ function App() {
               </div>
             )}
 
+            <AnimatePresence>
+              {quoteResult && tokenA && tokenB && (
+                <motion.div
+                  key="insights"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 6 }}
+                  transition={{ duration: 0.24, ease: 'easeOut' }}
+                  className="flex flex-col gap-3"
+                >
+                  {priceImpact > 15 && (
+                    <div className="high-impact-banner">
+                      Price impact is extremely high ({priceImpact.toFixed(2)}%). You may lose a significant portion of funds.
+                    </div>
+                  )}
+                  <QuoteDetails quote={quoteResult} tokenA={tokenA} tokenB={tokenB} />
+                  <RouteVisual quote={quoteResult} tokenB={tokenB} />
+                  <DataTabs quote={quoteResult} tokenB={tokenB} />
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             <SwapLifecyclePanel
               title={lifecycleState.title}
               detail={lifecycleState.detail}
               activeStep={lifecycleState.activeStep}
               error={lifecycleState.error}
             />
-          </motion.section>
-
-          <AnimatePresence mode="wait">
-            {quoteResult && tokenA && tokenB ? (
-              <motion.section
-                key="insights"
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 8 }}
-                transition={{ duration: 0.24, ease: 'easeOut' }}
-                className="space-y-3"
-              >
-                <QuoteDetails quote={quoteResult} tokenA={tokenA} tokenB={tokenB} />
-
-                {priceImpact > 15 && (
-                  <div className="high-impact-banner">
-                    Price impact is extremely high ({priceImpact.toFixed(2)}%). You may lose a significant portion of funds.
-                  </div>
-                )}
-
-                <RouteVisual quote={quoteResult} tokenB={tokenB} />
-                <DataTabs quote={quoteResult} tokenB={tokenB} />
-              </motion.section>
-            ) : (
-              <motion.section
-                key="placeholder"
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 8 }}
-                transition={{ duration: 0.24, ease: 'easeOut' }}
-                className="space-y-3"
-              >
-                <Card className="border-border bg-card ring-hairline overflow-hidden">
-                  <CardContent className="relative p-7">
-                    <div
-                      aria-hidden
-                      className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full opacity-40 blur-3xl"
-                      style={{ background: 'radial-gradient(circle, rgba(34,211,238,0.35), transparent 70%)' }}
-                    />
-                    <div
-                      aria-hidden
-                      className="pointer-events-none absolute -bottom-20 -left-10 h-48 w-48 rounded-full opacity-30 blur-3xl"
-                      style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.35), transparent 70%)' }}
-                    />
-                    <div className="relative">
-                      <div className="mb-1 font-mono-num text-[0.65rem] uppercase tracking-[0.22em] text-[var(--accent)]">
-                        Aequi · Route Engine
-                      </div>
-                      <h2 className="font-display text-xl font-bold tracking-tight text-foreground">
-                        Best execution, made legible.
-                      </h2>
-                      <p className="mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
-                        Enter an amount to start live route discovery. Aequi scans every pool, scores splits and
-                        multi-hop paths, and routes atomically through 0x&nbsp;Settler — you see the math before you sign.
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="border-border bg-card">
-                  <CardContent className="grid grid-cols-3 gap-px overflow-hidden bg-[var(--border-secondary)] p-0">
-                    {[
-                      { k: 'Venues', v: 'V2 · V3 · V4', s: 'Uni · Pancake · Velo' },
-                      { k: 'Execution', v: '0x Settler', s: 'AllowanceHolder · Permit2' },
-                      { k: 'Routing', v: 'Split + Hop', s: 'Best-of across pools' },
-                    ].map((cell) => (
-                      <div key={cell.k} className="bg-card p-4">
-                        <div className="font-mono-num text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">
-                          {cell.k}
-                        </div>
-                        <div className="mt-1 font-display text-sm font-bold text-foreground">{cell.v}</div>
-                        <div className="mt-0.5 text-[0.68rem] text-muted-foreground">{cell.s}</div>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              </motion.section>
-            )}
-          </AnimatePresence>
-        </div>
+        </motion.div>
       </main>
 
       <PoweredBy />
