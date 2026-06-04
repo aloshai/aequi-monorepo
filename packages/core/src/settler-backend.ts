@@ -949,22 +949,27 @@ export class SettlerBackend implements ExecutorBackend {
   }
 
   private encodeWrap(weth: Address, amount: bigint): SettlerAction {
-    // BASIC(sellToken=ETH, bps, pool=weth, offset, data) — calls WETH.deposit{value: amount}().
-    // Settler interprets sellToken=ETH + bps as "use msg.value * bps/10000".
-    const wethDeposit = encodeFunctionData({
-      abi: WETH_ABI,
-      functionName: 'deposit',
-      args: [],
-    })
+    // BASIC(sellToken=ETH, bps, pool=weth, offset=0, data=0x) — wrap ETH→WETH.
+    //
+    // CRITICAL: data MUST be empty. Settler's Basic.basicSellToPool, for the
+    // ETH branch with non-empty data, does `offset += 32; if (offset >
+    // data.length) Panic(ARRAY_OUT_OF_BOUNDS)` — it expects a 32-byte slot in
+    // data to inject the value into. deposit() calldata is only 4 bytes →
+    // 32 > 4 → Panic 0x32 (this reverted real native-input swaps on chain).
+    //
+    // With empty data Settler takes the `data.length == 0` path and does
+    // `payable(weth).call{value: balance*bps/10000}("")`. WETH9's fallback()
+    // is deposit(), so the value-only call wraps ETH and credits WETH to
+    // Settler — exactly what the subsequent bps swap needs.
     const data = encodeAbiParameters(
       [
-        { type: 'address' }, // sellToken
-        { type: 'uint256' }, // bps
-        { type: 'address' }, // pool
-        { type: 'uint256' }, // offset (0 = no inject)
-        { type: 'bytes' }, // data
+        { type: 'address' }, // sellToken (ETH sentinel)
+        { type: 'uint256' }, // bps (of Settler's ETH balance / msg.value)
+        { type: 'address' }, // pool (WETH)
+        { type: 'uint256' }, // offset (must be 0 for the empty-data path)
+        { type: 'bytes' }, // data (empty → value-only call → WETH fallback → deposit)
       ],
-      [SETTLER_ETH_ADDRESS, SETTLER_BPS_FULL, weth, 0n, wethDeposit]
+      [SETTLER_ETH_ADDRESS, SETTLER_BPS_FULL, weth, 0n, '0x']
     )
     void amount // value carried via msg.value at AllowanceHolder.exec level
     return {
