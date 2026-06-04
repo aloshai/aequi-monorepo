@@ -327,12 +327,7 @@ function App() {
       />
 
       <main className="main-content px-4 pb-20 pt-10">
-        <motion.div
-          initial={{ opacity: 0, y: 14 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
-          className="flex w-full max-w-[480px] flex-col gap-3"
-        >
+        <div className="rise flex w-full max-w-[480px] flex-col gap-3">
           <div className="mb-1 flex items-end justify-between px-1">
             <div>
               <h1 className="font-serif text-3xl tracking-tight text-foreground" style={{ fontWeight: 500 }}>Swap</h1>
@@ -469,7 +464,7 @@ function App() {
               activeStep={lifecycleState.activeStep}
               error={lifecycleState.error}
             />
-        </motion.div>
+        </div>
       </main>
 
       <PoweredBy />

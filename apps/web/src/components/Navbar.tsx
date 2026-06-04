@@ -1,7 +1,6 @@
 import type { ChainKey } from '../types/api'
 import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
 import { Settings2, Wallet, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -114,25 +113,15 @@ export function Navbar({
   return (
     <nav className="navbar border-b border-border bg-background/95 backdrop-blur-md">
       <div className="navbar-inner max-w-6xl">
-        <motion.div
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.28, ease: 'easeOut' }}
-          className="flex items-center gap-2.5"
-        >
+        <div className="rise flex items-center gap-2.5">
           <Link to="/" className="flex items-center gap-2.5" aria-label="Aequi home">
             <LogoMark size={26} />
             <Wordmark className="navbar-brand text-[1.1rem]" />
           </Link>
           <Badge variant="outline" className="hidden sm:inline-flex font-mono-num text-[0.62rem] uppercase tracking-wider">Beta</Badge>
-        </motion.div>
+        </div>
 
-        <motion.div
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.28, delay: 0.05, ease: 'easeOut' }}
-          className="navbar-actions"
-        >
+        <div className="rise navbar-actions" style={{ animationDelay: '0.05s' }}>
           <ChainSelector selected={selectedChain} onChange={onChainChange} />
 
           {!isConnected ? (
@@ -161,7 +150,7 @@ export function Navbar({
           <Button variant="ghost" size="icon" className="h-9 w-9" onClick={onOpenSettings} aria-label="Open settings" title="Settings">
             <Settings2 className="h-4 w-4" />
           </Button>
-        </motion.div>
+        </div>
       </div>
     </nav>
   )
