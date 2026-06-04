@@ -33,7 +33,11 @@ interface SettingsState {
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
-      slippageBps: 'auto',
+      // Default 0.5% (50 bps). Looser than 0.3% so MetaMask's pre-flight
+      // simulation of Settler swaps reverts far less on thin-liquidity pools
+      // (the 'this transaction will likely fail' false-positive), while
+      // staying tight enough for normal trades. Users can still pick Auto.
+      slippageBps: '50',
       deadlineSeconds: '600',
       version: 'auto' as RoutePreference,
       approvalMode: 'exact' as ApprovalMode,
