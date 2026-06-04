@@ -197,8 +197,7 @@ export function SettingsModal({
                   <Badge variant="outline">0x Settler</Badge>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  AllowanceHolder: one-time ERC20 approve, then each swap is a single tx (recommended).
-                  Permit2: one-time approve(Permit2), then each swap requires an EIP-712 signature in the wallet — gas-efficient and revocable per swap.
+                  AllowanceHolder: one-time ERC20 approve, then each swap is a single transaction you submit yourself.
                 </p>
                 <div className="grid grid-cols-1 gap-2">
                   <Button
@@ -210,10 +209,11 @@ export function SettingsModal({
                   </Button>
                   <Button
                     type="button"
-                    variant={tokenFlow === 'settler-permit2' ? 'default' : 'outline'}
-                    onClick={() => setTokenFlow('settler-permit2')}
+                    variant="outline"
+                    disabled
+                    title="Permit2 meta-transactions require a relayer to submit on your behalf. Aequi does not run one yet, so self-submitted Permit2 swaps are rejected on-chain (ConfusedDeputy)."
                   >
-                    Permit2 (sign per swap)
+                    Permit2 · gasless (needs relayer — soon)
                   </Button>
                 </div>
               </section>

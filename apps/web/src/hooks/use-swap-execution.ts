@@ -140,7 +140,13 @@ export function useSwapExecution(
           : undefined,
         forceMultiHop: store.forceMultiHop,
         quoteId: store.quoteResult.quoteId,
-        tokenFlow: settings.tokenFlow,
+        // Permit2 meta-txn (executeMetaTxn) can only be submitted by a relayer
+        // — a self-submitted Permit2 swap reverts on-chain with ConfusedDeputy
+        // (Settler: _operator() == msgSender). Aequi has no relayer, so always
+        // use AllowanceHolder. Coerce any stale persisted 'settler-permit2'.
+        tokenFlow: settings.tokenFlow === 'settler-permit2'
+          ? 'settler-allowance-holder'
+          : settings.tokenFlow,
       })
 
       store.setPreparedSwap(swapData)
