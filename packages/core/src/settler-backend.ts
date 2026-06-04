@@ -114,10 +114,18 @@ const encodeV3PackedPath = (
     if (i < fees.length) {
       types.push('uint8')        // forkId
       values.push(forkIds[i])
-      types.push('uint24')       // poolId (a.k.a. fee tier)
+      types.push('uint24')       // poolId (a.k.a. fee tier / tickSpacing)
       values.push(fees[i])
-      types.push('uint160')      // sqrtPriceLimitX96 (0 = no limit)
-      values.push(0n)
+      // sqrtPriceLimitX96: Settler passes this VERBATIM to pool.swap (no
+      // 0→bound substitution — see core/UniswapV3Fork.sol). A value of 0 makes
+      // the pool revert 'SPL'. We must supply the direction-appropriate bound:
+      //   zeroForOne (selling token0, i.e. tokenIn < tokenOut) → MIN_SQRT+1
+      //   oneForZero (selling token1)                          → MAX_SQRT-1
+      const tokenIn = (tokens[i] as Address).toLowerCase()
+      const tokenOut = (tokens[i + 1] as Address).toLowerCase()
+      const zeroForOne = tokenIn < tokenOut
+      types.push('uint160')      // sqrtPriceLimitX96
+      values.push(zeroForOne ? MIN_SQRT_PRICE_PLUS_ONE : MAX_SQRT_PRICE_MINUS_ONE)
     }
   }
   return encodePacked(types as never, values as never)
