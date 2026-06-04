@@ -10,7 +10,6 @@ const fadeUp = {
   animate: { opacity: 1, y: 0 },
 }
 const stagger = { animate: { transition: { staggerChildren: 0.07, delayChildren: 0.04 } } }
-const ease = [0.16, 1, 0.3, 1] as const
 
 export function Landing() {
   return (
@@ -47,37 +46,36 @@ export function Landing() {
           style={{ background: 'radial-gradient(ellipse at center, var(--accent-dim), transparent 68%)' }}
         />
         <div className="mx-auto grid w-full max-w-6xl gap-14 px-6 pb-24 pt-20 lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:pt-28">
-          <motion.div variants={stagger} initial="initial" animate="animate">
-            <motion.div
-              variants={fadeUp}
-              className="mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-card/70 px-3 py-1 text-xs font-medium text-muted-foreground"
+          <div>
+            <div
+              className="rise mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-card/70 px-3 py-1 text-xs font-medium text-muted-foreground"
+              style={{ animationDelay: '0.04s' }}
             >
               <span className="relative flex h-1.5 w-1.5">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--success)] opacity-60" />
                 <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[var(--success)]" />
               </span>
               Live on Ethereum · BNB Chain · Ink
-            </motion.div>
+            </div>
 
-            <motion.h1
-              variants={fadeUp}
-              className="font-serif text-[clamp(3.2rem,7vw,5.5rem)] font-500 leading-[0.98] tracking-[-0.03em] text-foreground"
-              style={{ fontWeight: 500 }}
+            <h1
+              className="rise font-serif text-[clamp(3.2rem,7vw,5.5rem)] leading-[0.98] tracking-[-0.03em] text-foreground"
+              style={{ fontWeight: 500, animationDelay: '0.11s' }}
             >
               Fair price,
               <br />
               <span className="italic text-gradient">found.</span>
-            </motion.h1>
+            </h1>
 
-            <motion.p
-              variants={fadeUp}
-              className="mt-7 max-w-md text-lg leading-relaxed text-muted-foreground"
+            <p
+              className="rise mt-7 max-w-md text-lg leading-relaxed text-muted-foreground"
+              style={{ animationDelay: '0.18s' }}
             >
               Aequi scans every pool, scores split and multi-hop routes, and settles
               atomically through 0x&nbsp;Settler — so you always trade at the best on-chain price.
-            </motion.p>
+            </p>
 
-            <motion.div variants={fadeUp} className="mt-9 flex flex-wrap items-center gap-3">
+            <div className="rise mt-9 flex flex-wrap items-center gap-3" style={{ animationDelay: '0.25s' }}>
               <Link
                 to="/app"
                 className="group inline-flex h-12 items-center gap-2 rounded-xl bg-[var(--accent)] px-6 text-base font-semibold text-[var(--accent-contrast)] transition-all hover:translate-y-[-1px]"
@@ -92,10 +90,10 @@ export function Landing() {
               >
                 How it works
               </a>
-            </motion.div>
+            </div>
 
             {/* Stat row — quiet credibility */}
-            <motion.div variants={fadeUp} className="mt-12 grid max-w-md grid-cols-3 gap-6 border-t border-border pt-6">
+            <div className="rise mt-12 grid max-w-md grid-cols-3 gap-6 border-t border-border pt-6" style={{ animationDelay: '0.32s' }}>
               {[
                 ['3', 'Chains live'],
                 ['V2–V4', 'Pool coverage'],
@@ -106,16 +104,11 @@ export function Landing() {
                   <div className="mt-0.5 text-xs text-muted-foreground">{l}</div>
                 </div>
               ))}
-            </motion.div>
-          </motion.div>
+            </div>
+          </div>
 
           {/* Floating quote card */}
-          <motion.div
-            initial={{ opacity: 0, y: 28, rotate: -1.5 }}
-            animate={{ opacity: 1, y: 0, rotate: 0 }}
-            transition={{ duration: 0.7, ease, delay: 0.15 }}
-            className="relative mx-auto w-full max-w-sm"
-          >
+          <div className="rise-card relative mx-auto w-full max-w-sm">
             <div className="elevate rounded-3xl border border-border bg-card p-5">
               <div className="mb-4 flex items-center justify-between">
                 <span className="font-serif text-base font-medium" style={{ fontWeight: 500 }}>Swap</span>
@@ -151,7 +144,7 @@ export function Landing() {
               className="pointer-events-none absolute -inset-8 -z-10 rounded-[2.5rem] opacity-70 blur-3xl"
               style={{ background: 'radial-gradient(ellipse at 30% 10%, var(--accent-dim), transparent 70%)' }}
             />
-          </motion.div>
+          </div>
         </div>
       </section>
 

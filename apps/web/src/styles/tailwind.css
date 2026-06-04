@@ -123,4 +123,30 @@
   .hairline {
     border: 1px solid hsl(var(--border));
   }
+
+  /* ── Hero entrance via CSS (compositor-driven, NOT JS-gated).
+        The wagmi/metamask bundle blocks the main thread on first load,
+        which delays framer-motion's mount animation and leaves the hero
+        blank for ~2s. CSS keyframes start at first paint regardless, so
+        the hero is never stuck invisible. Below-fold sections keep
+        framer whileInView (triggered on scroll, after JS is warm). ── */
+  @keyframes aequi-rise {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: none; }
+  }
+  @keyframes aequi-rise-card {
+    from { opacity: 0; transform: translateY(28px) rotate(-1.5deg); }
+    to   { opacity: 1; transform: none; }
+  }
+  .rise {
+    opacity: 0;
+    animation: aequi-rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  .rise-card {
+    opacity: 0;
+    animation: aequi-rise-card 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.12s forwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .rise, .rise-card { animation: none; opacity: 1; transform: none; }
+  }
 }
