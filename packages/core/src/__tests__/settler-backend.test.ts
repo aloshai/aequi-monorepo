@@ -170,8 +170,12 @@ describe('SettlerBackend.build (AllowanceHolder mode)', () => {
     expect(decoded.slippage.recipient).toBe(RECIPIENT)
     expect(decoded.slippage.buyToken).toBe(TOKEN_B)
     expect(decoded.slippage.minAmountOut).toBe(475_000_000_000_000_000n)
-    expect(decoded.actions).toHaveLength(1)
+    // AllowanceHolder ERC20 input: [TRANSFER_FROM (funds Settler), UNISWAPV2]
+    expect(decoded.actions).toHaveLength(2)
     expect(selectorOf(decoded.actions[0]!)).toBe(
+      SETTLER_ACTION_SELECTORS.TRANSFER_FROM.toLowerCase()
+    )
+    expect(selectorOf(decoded.actions[1]!)).toBe(
       SETTLER_ACTION_SELECTORS.UNISWAPV2.toLowerCase()
     )
   })
@@ -201,9 +205,11 @@ describe('SettlerBackend.build (AllowanceHolder mode)', () => {
     })
 
     const decoded = decodeOuter(result.data)
-    expect(decoded.actions).toHaveLength(2)
-    expect(selectorOf(decoded.actions[0]!)).toBe(SETTLER_ACTION_SELECTORS.UNISWAPV3.toLowerCase())
+    // [TRANSFER_FROM, UNISWAPV3 hop0, UNISWAPV3 hop1]
+    expect(decoded.actions).toHaveLength(3)
+    expect(selectorOf(decoded.actions[0]!)).toBe(SETTLER_ACTION_SELECTORS.TRANSFER_FROM.toLowerCase())
     expect(selectorOf(decoded.actions[1]!)).toBe(SETTLER_ACTION_SELECTORS.UNISWAPV3.toLowerCase())
+    expect(selectorOf(decoded.actions[2]!)).toBe(SETTLER_ACTION_SELECTORS.UNISWAPV3.toLowerCase())
 
     // Inner UNISWAPV3 layout: (address recipient, uint256 bps, bytes path, uint256 amountOutMin)
     const decode = (action: `0x${string}`) =>
@@ -212,8 +218,8 @@ describe('SettlerBackend.build (AllowanceHolder mode)', () => {
         ('0x' + action.slice(10)) as `0x${string}`
       ) as readonly [Address, bigint, `0x${string}`, bigint]
 
-    const [recipient0, bps0, _path0, min0] = decode(decoded.actions[0]!)
-    const [recipient1, bps1, _path1, min1] = decode(decoded.actions[1]!)
+    const [recipient0, bps0, _path0, min0] = decode(decoded.actions[1]!)
+    const [recipient1, bps1, _path1, min1] = decode(decoded.actions[2]!)
     expect(recipient0).toBe(SETTLER_ADDR)
     expect(recipient1).toBe(SETTLER_ADDR)
     expect(bps0).toBe(10_000n)
@@ -259,9 +265,11 @@ describe('SettlerBackend.build (AllowanceHolder mode)', () => {
 
     const decoded = decodeOuter(result.data)
     expect(decoded.slippage.buyToken).toBe(SETTLER_ETH_ADDRESS)
-    expect(decoded.actions).toHaveLength(2) // v2 + unwrap
-    expect(selectorOf(decoded.actions[0]!)).toBe(SETTLER_ACTION_SELECTORS.UNISWAPV2.toLowerCase())
-    expect(selectorOf(decoded.actions[1]!)).toBe(SETTLER_ACTION_SELECTORS.BASIC.toLowerCase())
+    // ERC20 input → [TRANSFER_FROM, UNISWAPV2, BASIC unwrap]
+    expect(decoded.actions).toHaveLength(3)
+    expect(selectorOf(decoded.actions[0]!)).toBe(SETTLER_ACTION_SELECTORS.TRANSFER_FROM.toLowerCase())
+    expect(selectorOf(decoded.actions[1]!)).toBe(SETTLER_ACTION_SELECTORS.UNISWAPV2.toLowerCase())
+    expect(selectorOf(decoded.actions[2]!)).toBe(SETTLER_ACTION_SELECTORS.BASIC.toLowerCase())
   })
 
   it('fee config: appends POSITIVE_SLIPPAGE with expectedAmount = quote * (1 - fee/10000)', () => {
@@ -278,13 +286,15 @@ describe('SettlerBackend.build (AllowanceHolder mode)', () => {
     })
 
     const decoded = decodeOuter(result.data)
-    expect(decoded.actions).toHaveLength(2) // v2 + positive-slippage
-    expect(selectorOf(decoded.actions[1]!)).toBe(SETTLER_ACTION_SELECTORS.POSITIVE_SLIPPAGE.toLowerCase())
+    // [TRANSFER_FROM, UNISWAPV2, POSITIVE_SLIPPAGE]
+    expect(decoded.actions).toHaveLength(3)
+    expect(selectorOf(decoded.actions[0]!)).toBe(SETTLER_ACTION_SELECTORS.TRANSFER_FROM.toLowerCase())
+    expect(selectorOf(decoded.actions[2]!)).toBe(SETTLER_ACTION_SELECTORS.POSITIVE_SLIPPAGE.toLowerCase())
 
     // POSITIVE_SLIPPAGE layout: (recipient, sellToken, expectedAmount, amountOutMin)
     const [feeRecipient, sellToken, expectedAmount, amountOutMin] = decodeAbiParameters(
       [{ type: 'address' }, { type: 'address' }, { type: 'uint256' }, { type: 'uint256' }],
-      ('0x' + decoded.actions[1]!.slice(10)) as `0x${string}`
+      ('0x' + decoded.actions[2]!.slice(10)) as `0x${string}`
     ) as readonly [Address, Address, bigint, bigint]
 
     expect(feeRecipient).toBe(FEE_RECIPIENT)
@@ -327,7 +337,9 @@ describe('SettlerBackend.build (AllowanceHolder mode)', () => {
     })
 
     const decoded = decodeOuter(result.data)
-    expect(decoded.actions).toHaveLength(3) // one hop per leg
+    // [TRANSFER_FROM, leg0 hop, leg1 hop, leg2 hop]
+    expect(decoded.actions).toHaveLength(4)
+    expect(selectorOf(decoded.actions[0]!)).toBe(SETTLER_ACTION_SELECTORS.TRANSFER_FROM.toLowerCase())
 
     const decodeV2 = (action: `0x${string}`) =>
       decodeAbiParameters(
@@ -342,9 +354,9 @@ describe('SettlerBackend.build (AllowanceHolder mode)', () => {
         ('0x' + action.slice(10)) as `0x${string}`
       ) as readonly [Address, Address, bigint, Address, number, bigint]
 
-    const [, , bps0, , ,] = decodeV2(decoded.actions[0]!)
-    const [, , bps1, , ,] = decodeV2(decoded.actions[1]!)
-    const [, , bps2, , ,] = decodeV2(decoded.actions[2]!)
+    const [, , bps0, , ,] = decodeV2(decoded.actions[1]!)
+    const [, , bps1, , ,] = decodeV2(decoded.actions[2]!)
+    const [, , bps2, , ,] = decodeV2(decoded.actions[3]!)
     expect(bps0).toBe(3_000n)
     expect(bps1).toBe(5_714n)
     expect(bps2).toBe(10_000n)
@@ -467,8 +479,12 @@ describe('SettlerBackend.build (AllowanceHolder mode)', () => {
     })
 
     const decoded = decodeOuter(result.data)
-    expect(decoded.actions).toHaveLength(1)
+    // [TRANSFER_FROM, UNISWAPV4]
+    expect(decoded.actions).toHaveLength(2)
     expect(selectorOf(decoded.actions[0]!)).toBe(
+      SETTLER_ACTION_SELECTORS.TRANSFER_FROM.toLowerCase()
+    )
+    expect(selectorOf(decoded.actions[1]!)).toBe(
       SETTLER_ACTION_SELECTORS.UNISWAPV4.toLowerCase()
     )
 
@@ -484,7 +500,7 @@ describe('SettlerBackend.build (AllowanceHolder mode)', () => {
           { type: 'bytes' },
           { type: 'uint256' },
         ],
-        ('0x' + decoded.actions[0]!.slice(10)) as `0x${string}`
+        ('0x' + decoded.actions[1]!.slice(10)) as `0x${string}`
       ) as readonly [Address, Address, bigint, boolean, bigint, bigint, `0x${string}`, bigint]
 
     expect(recipient).toBe(SETTLER_ADDR)

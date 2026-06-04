@@ -26,6 +26,19 @@ export const SETTLER_BPS_FULL = 10_000n as const
  */
 export const SETTLER_ACTION_SELECTORS = {
   /**
+   * TRANSFER_FROM(recipient, PermitTransferFrom, sig)
+   * — taker-submitted (AllowanceHolder) VIP action. Moves
+   * `permit.permitted.amount` of the input token from the taker into
+   * `recipient` (= Settler) via the AllowanceHolder allowance. `sig` is
+   * empty (0x) in AllowanceHolder mode. MUST be the first action of an
+   * AllowanceHolder swap so the subsequent bps-based swap actions have a
+   * non-zero Settler balance to sell.
+   */
+  TRANSFER_FROM: toFunctionSelector(
+    'TRANSFER_FROM(address,((address,uint256),uint256,uint256),bytes)'
+  ),
+
+  /**
    * METATXN_TRANSFER_FROM(recipient, PermitTransferFrom)
    * — VIP action: consumes the Permit2 signature passed to `executeMetaTxn`
    * and pulls `permit.permitted.amount` of `permit.permitted.token` from the

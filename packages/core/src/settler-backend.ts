@@ -352,21 +352,35 @@ export class SettlerBackend implements ExecutorBackend {
       )
     }
 
+    // Permit2 mode builds its own action list (prepends METATXN_TRANSFER_FROM)
+    // and entrypoint; hand off the swap actions before AllowanceHolder framing.
+    if (plan.tokenFlow === 'permit2') {
+      return this.buildPermit2(plan, actions, inputToken, outputToken, settlerAddress)
+    }
+
     const slippage = {
       recipient: plan.recipient,
       buyToken: this.settleBuyToken(plan, outputToken),
       minAmountOut: plan.amountOutMin,
     } as const
 
+    // AllowanceHolder mode: for ERC20 input we MUST move the tokens into
+    // Settler first, because the swap actions sell `bps × Settler.balanceOf`.
+    // Without this the balance is 0 → the pool gets amountSpecified 0 → the
+    // pool reverts ('AS' on UniV3/Slipstream forks). Native input is funded
+    // by the WRAP action instead, so it needs no TRANSFER_FROM.
+    const ahActions: SettlerAction[] = plan.useNativeInput
+      ? actions
+      : [
+          this.encodeTransferFrom(settlerAddress, getAddress(inputToken.address), plan.quote.amountIn),
+          ...actions,
+        ]
+
     const innerCalldata = encodeFunctionData({
       abi: SETTLER_EXECUTE_ABI,
       functionName: 'execute',
-      args: [slippage, actions.map((a) => this.concatActionCalldata(a)), ZID_AEQUI],
+      args: [slippage, ahActions.map((a) => this.concatActionCalldata(a)), ZID_AEQUI],
     })
-
-    if (plan.tokenFlow === 'permit2') {
-      return this.buildPermit2(plan, actions, inputToken, outputToken, settlerAddress)
-    }
 
     const ahCalldata = encodeFunctionData({
       abi: ALLOWANCE_HOLDER_ABI,
@@ -386,6 +400,47 @@ export class SettlerBackend implements ExecutorBackend {
       data: ahCalldata,
       value: plan.useNativeInput ? plan.quote.amountIn : 0n,
       settler: settlerAddress,
+    }
+  }
+
+  /**
+   * TRANSFER_FROM action for AllowanceHolder mode — moves `amount` of `token`
+   * from the taker into Settler (`recipient`). `sig` is empty: in
+   * taker-submitted mode Settler routes this through the AllowanceHolder
+   * allowance rather than a Permit2 signature. nonce/deadline are unused on
+   * the AllowanceHolder path but must be present for ABI shape.
+   */
+  private encodeTransferFrom(recipient: Address, token: Address, amount: bigint): SettlerAction {
+    const data = encodeAbiParameters(
+      [
+        { type: 'address' }, // recipient
+        {
+          type: 'tuple',
+          components: [
+            {
+              type: 'tuple',
+              name: 'permitted',
+              components: [
+                { name: 'token', type: 'address' },
+                { name: 'amount', type: 'uint256' },
+              ],
+            },
+            { name: 'nonce', type: 'uint256' },
+            { name: 'deadline', type: 'uint256' },
+          ],
+        },
+        { type: 'bytes' }, // sig (empty for AllowanceHolder)
+      ],
+      [
+        recipient,
+        { permitted: { token, amount }, nonce: 0n, deadline: 2n ** 48n } as never,
+        '0x',
+      ]
+    )
+    return {
+      selector: SETTLER_ACTION_SELECTORS.TRANSFER_FROM,
+      data,
+      label: 'transfer-from',
     }
   }
 
