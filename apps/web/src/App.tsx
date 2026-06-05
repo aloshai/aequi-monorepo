@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAccount, useChainId, useConnect, useDisconnect, useSwitchChain } from 'wagmi'
 import { AnimatePresence, motion } from 'framer-motion'
 import type { ChainKey } from './types/api'
@@ -15,6 +15,7 @@ import { useTokenBalances, formatBigIntAmount } from './hooks/use-token-balances
 import { useQuotePoller } from './hooks/use-quote-poller'
 import { useSwapExecution } from './hooks/use-swap-execution'
 import { resolveErrorRecoveryAction } from './utils/error-recovery'
+import { buildSwapSearch, parseSwapParams, resolveUrlToken } from './utils/swap-url'
 
 import { Navbar } from './components/Navbar'
 import { TokenInput } from './components/TokenInput'
@@ -111,9 +112,52 @@ function App() {
     return [...mapped, ...importedTokens.filter(t => t.chainId === CHAIN_ID_BY_KEY[selectedChain])]
   }, [selectedChain, importedTokens])
 
+  // Tracks whether the initial URL state has been applied, so the writer
+  // effect doesn't clobber a shared link before it's been read.
+  const urlConsumedRef = useRef(false)
+  const [urlHydrated, setUrlHydrated] = useState(false)
+
+  // One-time chain redirect: if a shared link names a chain other than the
+  // persisted one, switch to it. That re-runs the default-token effect below,
+  // which then consumes the URL's sell/buy/amount for the URL's chain.
+  useEffect(() => {
+    const parsed = parseSwapParams(window.location.search)
+    if (parsed.chain && parsed.chain !== selectedChain) {
+      setSelectedChain(parsed.chain)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   useEffect(() => {
     const presets = tokenDirectory[selectedChain] || []
     const cid = CHAIN_ID_BY_KEY[selectedChain]
+
+    // On the first run that targets the chain named in the URL (or any chain
+    // when the URL omits one), hydrate the pair/amount from the link instead
+    // of the defaults. Consumed only once so later chain switches reset cleanly.
+    if (!urlConsumedRef.current) {
+      const parsed = parseSwapParams(window.location.search)
+      if (parsed.hasAny && (!parsed.chain || parsed.chain === selectedChain)) {
+        urlConsumedRef.current = true
+        const urlA = resolveUrlToken(parsed.sell, presets, importedTokens, cid)
+        const urlB = resolveUrlToken(parsed.buy, presets, importedTokens, cid)
+        if (urlA !== undefined || urlB !== undefined || parsed.amount) {
+          const symA = selectedChain === 'bsc' ? 'BNB' : selectedChain === 'incentiv' ? 'CENT' : 'ETH'
+          const symB = selectedChain === 'bsc' ? 'USDT' : selectedChain === 'ink' ? 'USDC.e' : 'USDC'
+          const dA = presets.find(p => p.symbol === symA)
+          const dB = presets.find(p => p.symbol === symB)
+          const fallbackA = dA ? { address: dA.address, symbol: dA.symbol, name: dA.label, decimals: dA.decimals, chainId: cid } : null
+          const fallbackB = dB ? { address: dB.address, symbol: dB.symbol, name: dB.label, decimals: dB.decimals, chainId: cid } : null
+          setTokenA(urlA ?? fallbackA)
+          setTokenB(urlB ?? fallbackB)
+          setAmount(parsed.amount ?? '1')
+          resetQuoteState()
+          setUrlHydrated(true)
+          return
+        }
+      }
+    }
+
     const symA = selectedChain === 'bsc' ? 'BNB' : selectedChain === 'incentiv' ? 'CENT' : 'ETH'
     const symB = selectedChain === 'bsc' ? 'USDT' : selectedChain === 'ink' ? 'USDC.e' : 'USDC'
     const pA = presets.find(p => p.symbol === symA)
@@ -122,7 +166,20 @@ function App() {
     setTokenB(pB ? { address: pB.address, symbol: pB.symbol, name: pB.label, decimals: pB.decimals, chainId: cid } : null)
     setAmount('1')
     resetQuoteState()
-  }, [selectedChain, setTokenA, setTokenB, setAmount, resetQuoteState])
+    setUrlHydrated(true)
+  }, [selectedChain, setTokenA, setTokenB, setAmount, resetQuoteState, importedTokens])
+
+  // Mirror the live swap state into the URL (replaceState — no history spam) so
+  // the address bar is always a shareable, returnable link.
+  useEffect(() => {
+    if (!urlHydrated) return
+    const presets = tokenDirectory[selectedChain] || []
+    const search = buildSwapSearch({ chain: selectedChain, tokenA, tokenB, amount }, presets)
+    const next = `${window.location.pathname}?${search}`
+    if (`${window.location.pathname}${window.location.search}` !== next) {
+      window.history.replaceState(null, '', next)
+    }
+  }, [urlHydrated, selectedChain, tokenA, tokenB, amount])
 
   useEffect(() => { fetchExchangeDirectory({ chain: selectedChain }).catch(() => {}) }, [selectedChain])
 
@@ -176,6 +233,20 @@ function App() {
     if (!tokenA) return
     setAmount(formatBigIntAmount(balanceA / 4n, tokenA.decimals, 18))
   }, [balanceA, tokenA, setAmount])
+
+  const [copied, setCopied] = useState(false)
+  const copyResetRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const handleCopyLink = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href)
+      setCopied(true)
+      if (copyResetRef.current) clearTimeout(copyResetRef.current)
+      copyResetRef.current = setTimeout(() => setCopied(false), 1800)
+    } catch {
+      // Clipboard blocked (e.g. insecure context) — leave state unchanged.
+    }
+  }, [])
+  useEffect(() => () => { if (copyResetRef.current) clearTimeout(copyResetRef.current) }, [])
 
   const outputDisplay = quoteResult
     ? formatBigIntAmount(BigInt(quoteResult.amountOut), tokenB?.decimals || 18)
@@ -333,6 +404,25 @@ function App() {
               <h1 className="font-serif text-3xl tracking-tight text-foreground" style={{ fontWeight: 500 }}>Swap</h1>
               <p className="mt-1 text-sm text-muted-foreground">Best route across every pool — verified before you sign.</p>
             </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleCopyLink}
+              aria-label={copied ? 'Link copied' : 'Copy shareable link'}
+              title={copied ? 'Copied!' : 'Copy link to this swap'}
+              className="nav-icon-btn shrink-0"
+            >
+              {copied ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--success)]">
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                </svg>
+              )}
+            </button>
             <button
               type="button"
               onClick={openSettings}
@@ -343,6 +433,7 @@ function App() {
                 <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
               </svg>
             </button>
+            </div>
           </div>
 
           <Card className="border-border bg-card elevate">
