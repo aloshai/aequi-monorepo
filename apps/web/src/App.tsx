@@ -569,6 +569,8 @@ function App() {
         onClose={closeModal}
         onSelect={handleTokenSelect}
         defaultTokens={defaultTokens}
+        chain={selectedChain}
+        chainId={selectedChainId}
       />
 
       <SettingsModal

@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { X } from 'lucide-react'
 import { searchTokens } from '../services/dexscreener'
 import type { Token } from '../services/token-manager'
+import type { ChainKey } from '../types/api'
 import { getTokenLogo } from '../utils/logos'
 import { useTokenStore } from '../store/use-token-store'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -15,9 +16,11 @@ interface TokenModalProps {
   onClose: () => void
   onSelect: (token: Token) => void
   defaultTokens: Token[]
+  chain: ChainKey
+  chainId: number
 }
 
-export function TokenModal({ isOpen, onClose, onSelect, defaultTokens }: TokenModalProps) {
+export function TokenModal({ isOpen, onClose, onSelect, defaultTokens, chain, chainId }: TokenModalProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<Token[]>([])
   const [loading, setLoading] = useState(false)
@@ -39,7 +42,7 @@ export function TokenModal({ isOpen, onClose, onSelect, defaultTokens }: TokenMo
 
       setLoading(true)
       try {
-        const results = await searchTokens(searchQuery)
+        const results = await searchTokens(searchQuery, chain, chainId)
         setSearchResults(results)
       } catch {
         setSearchResults([])
@@ -50,7 +53,7 @@ export function TokenModal({ isOpen, onClose, onSelect, defaultTokens }: TokenMo
 
     const debounce = setTimeout(search, 400)
     return () => clearTimeout(debounce)
-  }, [searchQuery])
+  }, [searchQuery, chain, chainId])
 
   const handleRemoveImported = (e: React.MouseEvent, address: string) => {
     e.stopPropagation()
