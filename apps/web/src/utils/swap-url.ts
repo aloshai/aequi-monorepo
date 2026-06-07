@@ -11,7 +11,7 @@ import type { Token } from '../services/token-manager'
  * so any link resolves back to the exact pair on load.
  */
 
-const VALID_CHAINS: ChainKey[] = ['ethereum', 'bsc', 'ink', 'incentiv']
+const VALID_CHAINS: ChainKey[] = ['ethereum', 'bsc', 'base', 'ink', 'incentiv']
 
 export function parseChainParam(value: string | null): ChainKey | null {
   if (!value) return null

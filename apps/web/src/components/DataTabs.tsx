@@ -11,6 +11,7 @@ const BLOCK_EXPLORER: Record<ChainKey, string> = {
   bsc: 'https://bscscan.com',
   incentiv: 'https://explorer.incentiv.io',
   ink: 'https://explorer.inkonchain.com',
+  base: 'https://basescan.org',
 }
 
 const NATIVE_SYMBOL: Record<ChainKey, string> = {
@@ -18,6 +19,7 @@ const NATIVE_SYMBOL: Record<ChainKey, string> = {
   bsc: 'BNB',
   incentiv: 'CENT',
   ink: 'ETH',
+  base: 'ETH',
 }
 
 const COMPACT_SUFFIXES = ['', 'K', 'M', 'B', 'T', 'Q'] as const

@@ -1,4 +1,4 @@
-export type ChainKey = 'ethereum' | 'bsc' | 'incentiv' | 'ink'
+export type ChainKey = 'ethereum' | 'bsc' | 'incentiv' | 'ink' | 'base'
 
 export interface DexSummary {
   id: string

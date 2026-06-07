@@ -19,12 +19,14 @@ type SupportedChainId =
   | typeof CHAIN_BY_KEY.bsc.id
   | typeof CHAIN_BY_KEY.incentiv.id
   | typeof CHAIN_BY_KEY.ink.id
+  | typeof CHAIN_BY_KEY.base.id
 
 const CHAIN_ID_BY_KEY: Record<ChainKey, SupportedChainId> = {
   ethereum: CHAIN_BY_KEY.ethereum.id,
   bsc: CHAIN_BY_KEY.bsc.id,
   incentiv: CHAIN_BY_KEY.incentiv.id,
   ink: CHAIN_BY_KEY.ink.id,
+  base: CHAIN_BY_KEY.base.id,
 }
 
 export const formatBigIntAmount = (value: bigint, decimals: number, precision = 6): string => {

@@ -14,6 +14,8 @@ const envSchema = z.object({
   INCENTIV_RPC_URL_FALLBACK: z.string().optional(),
   INK_RPC_URL: z.string().optional(),
   INK_RPC_URL_FALLBACK: z.string().optional(),
+  BASE_RPC_URL: z.string().optional(),
+  BASE_RPC_URL_FALLBACK: z.string().optional(),
 
   // Rate limiting
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(120),
@@ -38,6 +40,8 @@ const envSchema = z.object({
   SETTLER_META_TXN_INCENTIV: z.string().optional(),
   SETTLER_INK: z.string().optional(),
   SETTLER_META_TXN_INK: z.string().optional(),
+  SETTLER_BASE: z.string().optional(),
+  SETTLER_META_TXN_BASE: z.string().optional(),
   FEE_RECIPIENT: z.string().optional(),
 
   // Swap
@@ -55,10 +59,10 @@ export function validateEnv(): Env {
   try {
     const env = envSchema.parse(process.env);
 
-    const hasAnyRpc = env.RPC_URL_ETH || env.BSC_RPC_URL || env.INCENTIV_RPC_URL || env.INK_RPC_URL;
+    const hasAnyRpc = env.RPC_URL_ETH || env.BSC_RPC_URL || env.INCENTIV_RPC_URL || env.INK_RPC_URL || env.BASE_RPC_URL;
     if (!hasAnyRpc) {
       throw new Error(
-        'At least one RPC URL must be configured (RPC_URL_ETH, BSC_RPC_URL, INCENTIV_RPC_URL, or INK_RPC_URL)'
+        'At least one RPC URL must be configured (RPC_URL_ETH, BSC_RPC_URL, INCENTIV_RPC_URL, INK_RPC_URL, or BASE_RPC_URL)'
       );
     }
 

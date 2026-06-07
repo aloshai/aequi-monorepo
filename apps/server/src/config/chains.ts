@@ -1,4 +1,4 @@
-import { mainnet, bsc as bscChain } from 'viem/chains'
+import { mainnet, bsc as bscChain, base as baseChain } from 'viem/chains'
 import { defineChain } from 'viem'
 import type { ChainConfig, ChainKey } from '../types'
 import { FeeAmount as PancakeFeeAmount } from '@pancakeswap/v3-sdk'
@@ -164,6 +164,66 @@ export const CHAIN_CONFIGS: Record<ChainKey, ChainConfig> = {
                 factoryAddress: '0x28e2Ea090877bF75740558f6BFB36A5ffeE9e9dF', // PoolManager
                 routerAddress: '0x28e2Ea090877bF75740558f6BFB36A5ffeE9e9dF',
                 quoterAddress: '0x9F75dD27D6664c475B90e105573E550ff69437B0',
+                feeTiers: [100, 500, 3000, 10000],
+                v4TickSpacings: [[100, 1], [500, 10], [3000, 60], [10000, 200]],
+            },
+        ],
+    },
+    base: {
+        key: 'base',
+        id: baseChain.id,
+        name: 'Base',
+        nativeCurrencySymbol: baseChain.nativeCurrency.symbol,
+        wrappedNativeAddress: '0x4200000000000000000000000000000000000006',
+        rpcUrls: appConfig.rpc.base.length ? appConfig.rpc.base : Array.from(baseChain.rpcUrls.default.http),
+        fallbackRpcUrls: appConfig.rpc.baseFallback,
+        disablePublicRpcRegistry: appConfig.rpc.base.length > 0,
+        viemChain: baseChain,
+        settler: buildSettlerAddresses('base'),
+        dexes: [
+            {
+                id: 'uniswap-v3',
+                label: 'Uniswap V3',
+                protocol: 'uniswap',
+                version: 'v3',
+                factoryAddress: '0x33128a8fC17869897dcE68Ed026d694621f6FDfD',
+                routerAddress: '0x2626664c2603336E57B271c5C0b26F421741e481', // SwapRouter02
+                quoterAddress: '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a', // QuoterV2
+                feeTiers: [FeeAmount.LOWEST, FeeAmount.LOW_200, FeeAmount.LOW_300, FeeAmount.LOW_400, FeeAmount.LOW, FeeAmount.MEDIUM, FeeAmount.HIGH],
+                useRouter02: true,
+            },
+            {
+                // Aerodrome Slipstream — the dominant DEX on Base by TVL/volume.
+                // Slipstream is a Velodrome/Uniswap-V3 fork (EIP-1167 clone pools,
+                // tickSpacing-keyed). Settler dispatches it via the UNISWAPV3
+                // action with forkId=4, which 0x's official Base mixin
+                // (lib/0x-settler/src/chains/Base/Common.sol → AerodromeSlipstream)
+                // wires to aerodromeFactoryV3_0 = 0x5e7BB104… + its EIP-1167 init
+                // hash. The dex `id` MUST stay 'velodrome-slipstream' so
+                // SettlerBackend.dexIdToSettlerForkId maps it to forkId 4, and the
+                // factory MUST equal the upstream aerodromeFactoryV3_0 for quote
+                // and execution to derive the same pool. No Aequi fork required
+                // here (unlike Ink) since Base is a first-class 0x chain.
+                id: 'velodrome-slipstream',
+                label: 'Aerodrome (Slipstream)',
+                protocol: 'velodrome-slipstream',
+                version: 'v3',
+                factoryAddress: '0x5e7BB104d84c7CB9B682AaC2F3d509f5F406809A',
+                routerAddress: '0x5e7BB104d84c7CB9B682AaC2F3d509f5F406809A', // Settler dispatches directly; no standalone router in our flow
+                quoterAddress: '0x254cF9E1E6e233aa1AC962CB9B05b2cfeAaE15b0', // Aerodrome CL Quoter (factory() == aerodromeFactoryV3_0, verified)
+                slipstreamTickSpacings: [1, 50, 100, 200, 2000],
+            },
+            {
+                // Uniswap V4 on Base. Singleton PoolManager; routerAddress equals
+                // factoryAddress (no router — Settler talks to PoolManager via the
+                // UNISWAPV4 action).
+                id: 'uniswap-v4',
+                label: 'Uniswap V4',
+                protocol: 'uniswap',
+                version: 'v4',
+                factoryAddress: '0x498581fF718922c3f8e6A244956aF099B2652b2b', // PoolManager
+                routerAddress: '0x498581fF718922c3f8e6A244956aF099B2652b2b',
+                quoterAddress: '0x0d5e0F971ED27FBfF6c2837bf31316121532048D', // V4 Quoter
                 feeTiers: [100, 500, 3000, 10000],
                 v4TickSpacings: [[100, 1], [500, 10], [3000, 60], [10000, 200]],
             },

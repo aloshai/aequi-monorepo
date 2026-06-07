@@ -87,6 +87,13 @@ const DEFAULTS = {
     //  swapped out here for the Velodrome-capable fork.)
     inkSettler: '0xDEAc709C87a797917F8D8547c0F92D6045AE71d6' as Address,
     inkSettlerMetaTxn: '0xb68a6479D1556Ee9557607BCFB1f531A70caE275' as Address,
+    // Base (chainId 8453) — 0x's official Settler. Base is a first-class 0x
+    // chain (lib/0x-settler/src/chains/Base/Common.sol), so no Aequi fork is
+    // needed: Aerodrome Slipstream is wired upstream at forkId=4 and Uniswap
+    // V3/V4 at forkIds 0/V4. Resolved 2026-06 via Deployer.ownerOf(2|3) on
+    // mainnet.base.org (chainId 0x2105).
+    baseSettler: '0x7747F8D2a76BD6345Cc29622a946A929647F2359' as Address,
+    baseSettlerMetaTxn: '0x68A14203953130ae840e37DBe3d64c1E6858da7b' as Address,
   },
 }
 
@@ -112,6 +119,8 @@ export const appConfig = {
     incentivFallback: parseUrlList(process.env.INCENTIV_RPC_URL_FALLBACK),
     ink: parseUrlList(process.env.INK_RPC_URL),
     inkFallback: parseUrlList(process.env.INK_RPC_URL_FALLBACK),
+    base: parseUrlList(process.env.BASE_RPC_URL),
+    baseFallback: parseUrlList(process.env.BASE_RPC_URL_FALLBACK),
   },
   dex: {
     uniswapV2Factory: parseAddressWithFallback(process.env.UNISWAP_V2_FACTORY, DEFAULTS.dex.uniswapV2Factory),
@@ -156,6 +165,10 @@ export const appConfig = {
       ink: {
         settler: parseAddressOrNull(process.env.SETTLER_INK) ?? DEFAULTS.settler.inkSettler,
         settlerMetaTxn: parseAddressOrNull(process.env.SETTLER_META_TXN_INK) ?? DEFAULTS.settler.inkSettlerMetaTxn,
+      },
+      base: {
+        settler: parseAddressOrNull(process.env.SETTLER_BASE) ?? DEFAULTS.settler.baseSettler,
+        settlerMetaTxn: parseAddressOrNull(process.env.SETTLER_META_TXN_BASE) ?? DEFAULTS.settler.baseSettlerMetaTxn,
       },
     },
   },

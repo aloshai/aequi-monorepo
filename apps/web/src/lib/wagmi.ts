@@ -1,5 +1,5 @@
 import { createConfig, http } from 'wagmi'
-import { bsc, mainnet } from 'wagmi/chains'
+import { bsc, mainnet, base } from 'wagmi/chains'
 import { injected, metaMask } from 'wagmi/connectors'
 import { defineChain } from 'viem'
 
@@ -38,11 +38,12 @@ const ink = defineChain({
 })
 
 export const wagmiConfig = createConfig({
-  chains: [mainnet, bsc, incentiv, ink],
+  chains: [mainnet, bsc, base, incentiv, ink],
   connectors: [metaMask(), injected({ shimDisconnect: true })],
   transports: {
     [mainnet.id]: http(),
     [bsc.id]: http(),
+    [base.id]: http(),
     [incentiv.id]: http(),
     [ink.id]: http(),
   },
@@ -52,6 +53,7 @@ export const wagmiConfig = createConfig({
 export const CHAIN_BY_KEY = {
   ethereum: mainnet,
   bsc,
+  base,
   incentiv,
   ink,
 } as const

@@ -25,6 +25,7 @@ interface NavbarProps {
 const CHAIN_OPTIONS: Array<{ key: ChainKey; label: string }> = [
   { key: 'ethereum', label: 'Ethereum' },
   { key: 'bsc', label: 'BNB Chain' },
+  { key: 'base', label: 'Base' },
   { key: 'ink', label: 'Ink' },
   { key: 'incentiv', label: 'Incentiv' },
 ]
@@ -32,6 +33,7 @@ const CHAIN_OPTIONS: Array<{ key: ChainKey; label: string }> = [
 const CHAIN_LOGO: Record<ChainKey, string> = {
   ethereum: '/ethereum.svg',
   bsc: '/bnb.svg',
+  base: '/base.svg',
   ink: '/ink.svg',
   incentiv: '/incentiv.svg',
 }

@@ -175,6 +175,43 @@ export const INTERMEDIATE_TOKENS: Record<ChainKey, Array<Omit<TokenMetadata, 'to
       decimals: 18,
     },
   ],
+  base: [
+    {
+      chainId: 8453,
+      address: '0x4200000000000000000000000000000000000006',
+      symbol: 'WETH',
+      name: 'Wrapped Ether',
+      decimals: 18,
+    },
+    {
+      chainId: 8453,
+      address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+      symbol: 'USDC',
+      name: 'USD Coin',
+      decimals: 6,
+    },
+    {
+      chainId: 8453,
+      address: '0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA',
+      symbol: 'USDbC',
+      name: 'Bridged USD Coin',
+      decimals: 6,
+    },
+    {
+      chainId: 8453,
+      address: '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb',
+      symbol: 'DAI',
+      name: 'Dai Stablecoin',
+      decimals: 18,
+    },
+    {
+      chainId: 8453,
+      address: '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf',
+      symbol: 'cbBTC',
+      name: 'Coinbase Wrapped BTC',
+      decimals: 8,
+    },
+  ],
 }
 
 export const INTERMEDIATE_TOKEN_ADDRESSES: Record<ChainKey, Address[]> = Object.fromEntries(

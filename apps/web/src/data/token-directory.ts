@@ -148,4 +148,54 @@ export const tokenDirectory: Record<ChainKey, TokenPreset[]> = {
       decimals: 8,
     },
   ],
+  base: [
+    {
+      address: '0xEeeeeEeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+      symbol: 'ETH',
+      label: 'ETH · Ether',
+      decimals: 18,
+    },
+    {
+      address: '0x4200000000000000000000000000000000000006',
+      symbol: 'WETH',
+      label: 'WETH · Wrapped Ether',
+      decimals: 18,
+    },
+    {
+      address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+      symbol: 'USDC',
+      label: 'USDC · USD Coin',
+      decimals: 6,
+    },
+    {
+      address: '0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA',
+      symbol: 'USDbC',
+      label: 'USDbC · Bridged USD Coin',
+      decimals: 6,
+    },
+    {
+      address: '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb',
+      symbol: 'DAI',
+      label: 'DAI · Dai Stablecoin',
+      decimals: 18,
+    },
+    {
+      address: '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf',
+      symbol: 'cbBTC',
+      label: 'cbBTC · Coinbase Wrapped BTC',
+      decimals: 8,
+    },
+    {
+      address: '0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22',
+      symbol: 'cbETH',
+      label: 'cbETH · Coinbase Wrapped Staked ETH',
+      decimals: 18,
+    },
+    {
+      address: '0x940181a94A35A4569E4529A3CDfB74e38FD98631',
+      symbol: 'AERO',
+      label: 'AERO · Aerodrome',
+      decimals: 18,
+    },
+  ],
 }
